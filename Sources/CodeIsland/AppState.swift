@@ -48,6 +48,10 @@ final class AppState {
 
     var sessions: [String: SessionSnapshot] = [:]
     var activeSessionId: String?
+
+    var quotaAgent: QuotaAgent? {
+        QuotaAgentSelection.resolve(sessions: sessions, activeID: activeSessionId)
+    }
     var permissionQueue: [PermissionRequest] = [] {
         didSet {
             followUps.waitingChanged()
@@ -306,6 +310,54 @@ final class AppState {
     /// Local-transcript token usage shown in the session-list footer.
     /// Refreshed lazily on panel expansion (no resident timer, no API calls).
     var claudeUsage: ClaudeUsageScanner.Snapshot?
+    var codexQuota: CodexQuotaSnapshot?
+    var codexQuotaReadFailed = false
+    @ObservationIgnored private var codexQuotaScanInFlight = false
+
+    func refreshCodexQuota() async {
+        guard !RuntimeEnvironment.isIsolated, !codexQuotaScanInFlight else { return }
+        codexQuotaScanInFlight = true
+        let root = URL(fileURLWithPath: ConfigInstaller.codexHome(), isDirectory: true)
+            .appendingPathComponent("sessions", isDirectory: true)
+        let result = await Task.detached(priority: .utility) {
+            Result { try CodexQuotaLoader.load(root: root) }
+        }.value
+        switch result {
+        case .success(let snapshot):
+            codexQuota = snapshot
+            codexQuotaReadFailed = false
+        case .failure:
+            codexQuotaReadFailed = true
+        }
+        codexQuotaScanInFlight = false
+    }
+    var grokQuota: GrokQuotaSnapshot?
+    var grokQuotaReadFailed = false
+    var grokQuotaNeedsLogin = false
+    @ObservationIgnored private var grokQuotaScanInFlight = false
+
+    func refreshGrokQuota() async {
+        guard !RuntimeEnvironment.isIsolated, !grokQuotaScanInFlight else { return }
+        grokQuotaScanInFlight = true
+        let authURL = URL(fileURLWithPath: ConfigInstaller.grokHome(), isDirectory: true)
+            .appendingPathComponent("auth.json")
+        let result = await Task.detached(priority: .utility) {
+            await GrokQuotaLoader.load(authURL: authURL)
+        }.value
+        switch result {
+        case .snapshot(let snapshot):
+            grokQuota = snapshot
+            grokQuotaReadFailed = false
+            grokQuotaNeedsLogin = false
+        case .needsLogin:
+            grokQuotaNeedsLogin = true
+            grokQuotaReadFailed = false
+        case .failed:
+            grokQuotaReadFailed = true
+            grokQuotaNeedsLogin = false
+        }
+        grokQuotaScanInFlight = false
+    }
     /// Subscription rate limits (5h / weekly) from Anthropic — opt-in, network.
     let claudeQuota = ClaudeQuotaMonitor()
     /// Process-wide, not per-instance: the scan reads one shared history

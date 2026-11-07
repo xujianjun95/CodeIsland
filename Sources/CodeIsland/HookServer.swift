@@ -659,11 +659,8 @@ class HookServer {
                 return
             }
 
-            if Self.shouldDeferPermissionRequestToProvider(event) {
-                sendResponse(connection: connection, data: Data("{}".utf8))
-                return
-            }
-
+            // Always surface PermissionRequest hooks in the island rather than
+            // deferring to Codex auto-review.
             guard let hook = hold(connection) else { return }
             Task {
                 let responseBody = await withCheckedContinuation { continuation in

@@ -318,6 +318,15 @@ enum DebugHarness {
     }
 
     private static func applyCodex(to state: AppState) {
+        state.claudeQuota.applyPreview(ClaudeQuotaSnapshot(
+            limits: [ClaudeQuotaLimit(kind: .session, percent: 72, resetsAt: Date().addingTimeInterval(3600))],
+            fetchedAt: Date()
+        ))
+        let reset5h = Int(Date().addingTimeInterval(3 * 3600).timeIntervalSince1970)
+        let resetWeek = Int(Date().addingTimeInterval(3 * 86400).timeIntervalSince1970)
+        state.codexQuota = CodexQuotaLoader.parse("""
+        {"timestamp":"2026-11-06T12:00:00Z","type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":37,"window_minutes":300,"resets_at":\(reset5h)},"secondary":{"used_percent":73,"window_minutes":10080,"resets_at":\(resetWeek)}}}}
+        """)
         var s = SessionSnapshot()
         s.status = .running
         s.cwd = "/tmp/demo-codex"

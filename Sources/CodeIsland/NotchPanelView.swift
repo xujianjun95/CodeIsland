@@ -2963,6 +2963,8 @@ private struct SessionListView: View {
     @AppStorage(SettingsKey.maxVisibleSessions) private var maxVisibleSessions = SettingsDefaults.maxVisibleSessions
     @AppStorage(SettingsKey.showUsageStats) private var showUsageStats = SettingsDefaults.showUsageStats
     @AppStorage(SettingsKey.showClaudeQuota) private var showClaudeQuota = SettingsDefaults.showClaudeQuota
+    @AppStorage(SettingsKey.showCodexQuota) private var showCodexQuota = SettingsDefaults.showCodexQuota
+    @AppStorage(SettingsKey.showGrokQuota) private var showGrokQuota = SettingsDefaults.showGrokQuota
     @AppStorage(SettingsKey.sessionListDensity) private var densityRaw = SettingsDefaults.sessionListDensity
     @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
     @AppStorage(SettingsKey.showProjectName) private var showProjectName = SettingsDefaults.showProjectName
@@ -3161,13 +3163,168 @@ private struct SessionListView: View {
             // Full session list only — the completion card stays focused on
             // the finished session.
             if onlySessionId == nil {
-                SessionListFooter(appState: appState, showUsageStats: showUsageStats, showClaudeQuota: showClaudeQuota)
+                if appState.quotaAgent == .claude {
+                    SessionListFooter(appState: appState, showUsageStats: showUsageStats, showClaudeQuota: showClaudeQuota)
+                }
+                if appState.quotaAgent == .codex && showCodexQuota {
+                    CodexQuotaFooter(appState: appState)
+                }
+                if appState.quotaAgent == .grok && showGrokQuota {
+                    GrokQuotaFooter(appState: appState)
+                }
             }
         }
     }
 }
 
 // MARK: - Plan limits (Anthropic subscription windows)
+
+/// One shared sentence for every plan footer:
+/// "Codex 5小时额度已用 100%，重置时间：11月7日 00:16".
+private enum QuotaSentenceStyle {
+    static func line(name: String?, window: String, percent: Double, resetsAt: Date?, l10n: L10n, now: Date) -> String {
+        let used = Int(percent.rounded())
+        let reset = resetText(resetsAt, l10n: l10n, now: now)
+        if let name, !name.isEmpty {
+            if let reset { return String(format: l10n["quota_sentence"], name, window, used, reset) }
+            return String(format: l10n["quota_sentence_no_reset"], name, window, used)
+        }
+        if let reset { return String(format: l10n["quota_sentence_more"], window, used, reset) }
+        return String(format: l10n["quota_sentence_more_no_reset"], window, used)
+    }
+
+    static func resetText(_ date: Date?, l10n: L10n, now: Date) -> String? {
+        guard let date else { return nil }
+        if date <= now { return l10n["codex_quota_expired"] }
+        let sameYear = Calendar.current.isDate(date, equalTo: now, toGranularity: .year)
+        if sameYear {
+            return date.formatted(.dateTime.month().day().hour().minute())
+        }
+        return date.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    /// Codex windows are a 5-hour bucket and a weekly bucket. Anything under a
+    /// day uses the hour count, so a non-5-hour window is not labelled "5小时".
+    static func codexWindow(_ minutes: Int, l10n: L10n) -> String {
+        if minutes >= 1440 { return l10n["quota_window_week"] }
+        let hours = max(minutes / 60, 1)
+        if hours == 5 { return l10n["quota_window_5h"] }
+        return String(format: l10n["quota_window_hours"], hours)
+    }
+}
+
+private struct QuotaSentenceBlock: View {
+    let lines: [String]
+    var help: String = ""
+
+    var body: some View {
+        Text(lines.joined(separator: "    "))
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .font(.system(size: 10, weight: .medium, design: .monospaced))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 5)
+            .help(help)
+    }
+}
+
+private struct GrokQuotaFooter: View {
+    var appState: AppState
+    @ObservedObject private var l10n = L10n.shared
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            if let snapshot = appState.grokQuota {
+                QuotaSentenceBlock(
+                    lines: [
+                        QuotaSentenceStyle.line(
+                            name: "Grok",
+                            window: l10n["quota_window_week"],
+                            percent: snapshot.usedPercent,
+                            resetsAt: snapshot.resetsAt,
+                            l10n: l10n,
+                            now: context.date
+                        )
+                    ],
+                    help: tooltip(snapshot)
+                )
+            } else {
+                Text(l10n[appState.grokQuotaReadFailed ? "grok_quota_read_failed" : "grok_quota_unavailable"])
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 5)
+            }
+        }
+        .task {
+            while !Task.isCancelled {
+                await appState.refreshGrokQuota()
+                do { try await Task.sleep(for: .seconds(60)) } catch { break }
+            }
+        }
+    }
+
+    private func tooltip(_ snapshot: GrokQuotaSnapshot) -> String {
+        if appState.grokQuotaReadFailed { return l10n["grok_quota_read_failed"] }
+        let split = snapshot.products.map { "\(label($0.name)) \(Int($0.usedPercent.rounded()))%" }
+        var lines = split
+        lines.append("\(l10n["codex_quota_updated"]) \(snapshot.capturedAt.formatted(date: .abbreviated, time: .shortened))")
+        return lines.joined(separator: "\n")
+    }
+
+    private func label(_ name: String) -> String {
+        switch name {
+        case "GrokBuild": return "Build"
+        case "GrokBot": return "Bot"
+        case "GrokImagine": return "Imagine"
+        case "GrokChat": return "Chat"
+        default: return name
+        }
+    }
+}
+
+private struct CodexQuotaFooter: View {
+    var appState: AppState
+    @ObservedObject private var l10n = L10n.shared
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            if let snapshot = appState.codexQuota {
+                let lines = snapshot.windows.enumerated().map { index, window in
+                    QuotaSentenceStyle.line(
+                        name: index == 0 ? "Codex" : nil,
+                        window: QuotaSentenceStyle.codexWindow(window.minutes, l10n: l10n),
+                        percent: window.usedPercent,
+                        resetsAt: window.resetsAt,
+                        l10n: l10n,
+                        now: context.date
+                    )
+                }
+                QuotaSentenceBlock(
+                    lines: lines,
+                    help: appState.codexQuotaReadFailed
+                        ? l10n["codex_quota_read_failed"]
+                        : "\(l10n["codex_quota_updated"]) \(snapshot.capturedAt.formatted(date: .abbreviated, time: .shortened))"
+                )
+            } else {
+                Text(l10n[appState.codexQuotaReadFailed ? "codex_quota_read_failed" : "codex_quota_unavailable"])
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 5)
+            }
+        }
+        .task {
+            while !Task.isCancelled {
+                await appState.refreshCodexQuota()
+                do { try await Task.sleep(for: .seconds(30)) } catch { break }
+            }
+        }
+    }
+
+}
 
 private enum QuotaStyle {
     static let normal = Color.white.opacity(0.85)
@@ -3395,7 +3552,7 @@ struct QuotaChip: View {
     /// Shared resolution for the chip's limit so the bar width and the wing
     /// agree on whether it is shown.
     static func limit(appState: AppState, enabled: Bool, modeRaw: String) -> ClaudeQuotaLimit? {
-        guard enabled, let mode = ClaudeQuotaChipMode(rawValue: modeRaw), mode != .off,
+        guard appState.quotaAgent == .claude, enabled, let mode = ClaudeQuotaChipMode(rawValue: modeRaw), mode != .off,
               let snapshot = appState.claudeQuota.snapshot else { return nil }
         return ClaudeQuotaSelector.pick(from: snapshot, mode: mode)
     }
@@ -3590,84 +3747,40 @@ private struct QuotaFooterLine: View {
     let usage: ClaudeUsageScanner.Snapshot?
     @ObservedObject private var l10n = L10n.shared
 
-    static let barWidth: CGFloat = 46
-
     var body: some View {
-        // Countdowns tick once a minute; the panel is only open briefly.
+        // Reset times tick once a minute; the panel is only open briefly.
         TimelineView(.periodic(from: .now, by: 60)) { context in
             let now = context.date
             let tooltip = UsageFooterText.limitsTooltip(
                 snapshot, stale: error != nil, usage: usage, l10n: l10n, now: now
             )
-            HStack(spacing: 8) {
-                // Too narrow for every window with its countdown (long
-                // model name, large text): the countdowns go first, to the
-                // tooltip.
-                ViewThatFits(in: .horizontal) {
-                    windows(now: now, countdowns: true)
-                    windows(now: now, countdowns: false)
-                }
-                Spacer(minLength: 0)
-                if error != nil {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 9))
-                        .foregroundStyle(QuotaStyle.warning)
-                        .help(l10n["quota_stale"])
-                }
-                if let usage {
-                    UsageSparkline(buckets: usage.hourlyOutputTokens)
-                }
-            }
-            .font(.system(size: 10, weight: .medium, design: .monospaced))
-            .padding(.horizontal, 14)
-            .padding(.top, 7)
-            .padding(.bottom, 9)
-            .contentShape(Rectangle())
-            .help(tooltip)
-            // The tooltip is the whole story, tokens included.
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(tooltip)
+            QuotaSentenceBlock(lines: lines(now: now), help: tooltip)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(tooltip)
         }
     }
 
-    private func windows(now: Date, countdowns: Bool) -> some View {
-        HStack(spacing: 12) {
-            ForEach(Array(snapshot.ordered.enumerated()), id: \.offset) { _, limit in
-                segment(limit, now: now, countdown: countdowns)
+    private func lines(now: Date) -> [String] {
+        var shownName: String?
+        return snapshot.ordered.map { limit in
+            let weekly = limit.kind != .session
+            let name: String
+            if limit.kind == .weeklyScoped, let scope = limit.scopeLabel, !scope.isEmpty {
+                name = scope
+            } else {
+                name = "Claude"
             }
+            let includeName = shownName != name
+            shownName = name
+            return QuotaSentenceStyle.line(
+                name: includeName ? name : nil,
+                window: weekly ? l10n["quota_window_week"] : l10n["quota_window_5h"],
+                percent: limit.percent,
+                resetsAt: limit.resetsAt,
+                l10n: l10n,
+                now: now
+            )
         }
-        .lineLimit(1)
-    }
-
-    private func segment(_ limit: ClaudeQuotaLimit, now: Date, countdown: Bool) -> some View {
-        let color = QuotaStyle.color(UsageFooterText.level(limit))
-        return HStack(spacing: 5) {
-            Text(UsageFooterText.windowLabel(limit, l10n: l10n))
-                .foregroundStyle(.white.opacity(0.6))
-            ZStack(alignment: .leading) {
-                Capsule().fill(.white.opacity(0.14))
-                Capsule().fill(color)
-                    .frame(width: Self.barWidth * min(limit.percent / 100, 1))
-                // Even-pace tick: where usage would be if spread evenly.
-                if let elapsed = limit.elapsedFraction(now: now) {
-                    Rectangle()
-                        .fill(.white.opacity(0.6))
-                        .frame(width: 1, height: 8)
-                        .offset(x: Self.barWidth * elapsed - 0.5)
-                }
-            }
-            .frame(width: Self.barWidth, height: 5)
-            Text(ClaudeQuotaFormat.percent(limit.percent))
-                .fontWeight(.semibold)
-                .foregroundStyle(color)
-            if countdown, let resetsAt = limit.resetsAt,
-               let left = ClaudeQuotaFormat.countdown(until: resetsAt, now: now) {
-                Text(left)
-                    .font(.system(size: 9.5, weight: .regular, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.5))
-            }
-        }
-        .fixedSize()
     }
 }
 
@@ -4388,8 +4501,9 @@ private struct SessionCard: View {
                     SessionTag("YOLO", color: Color(red: 1.0, green: 0.35, blue: 0.35))
                 }
                 if showModelLabel, let modelLabel = session.modelLabel {
-                    SessionTag(modelLabel, color: SessionMetadataStyle.modelTagColor, maxWidth: 120)
+                    SessionTag(modelLabel, color: SessionMetadataStyle.modelTagColor)
                         .help(session.model ?? modelLabel)
+                        .layoutPriority(2)
                 }
                 SessionTag(timeAgo(session.startTime))
                 TerminalBadge(session: session)
@@ -5313,8 +5427,8 @@ private struct TerminalBadge: View {
                         Image(nsImage: icon)
                             .resizable()
                             .frame(width: 13, height: 13)
-                    }
-                    if let term = badgeLabel {
+                            .help(badgeLabel ?? "")
+                    } else if let term = badgeLabel {
                         Text(term)
                             .font(.system(size: 9.5, weight: .medium, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.5))
@@ -5548,6 +5662,7 @@ private struct SessionTag: View {
             .font(.system(size: Self.fontSize, weight: .medium, design: .monospaced))
             .foregroundStyle(color)
             .lineLimit(1)
+            .fixedSize(horizontal: maxWidth == nil, vertical: false)
             .hugWidth(of: text, fontSize: Self.fontSize, upTo: maxWidth.map { $0 - 12 })
             .padding(.horizontal, 6)
             .padding(.vertical, 3)

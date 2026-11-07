@@ -1346,6 +1346,8 @@ private struct AppearancePage: View {
     @AppStorage(SettingsKey.showProjectName) private var showProjectName = SettingsDefaults.showProjectName
     @AppStorage(SettingsKey.showUsageStats) private var showUsageStats = SettingsDefaults.showUsageStats
     @AppStorage(SettingsKey.showClaudeQuota) private var showClaudeQuota = SettingsDefaults.showClaudeQuota
+    @AppStorage(SettingsKey.showCodexQuota) private var showCodexQuota = SettingsDefaults.showCodexQuota
+    @AppStorage(SettingsKey.showGrokQuota) private var showGrokQuota = SettingsDefaults.showGrokQuota
     @AppStorage(SettingsKey.claudeQuotaChip) private var claudeQuotaChip = SettingsDefaults.claudeQuotaChip
     @AppStorage(SettingsKey.collapsedWidthScale) private var collapsedWidthScale = SettingsDefaults.collapsedWidthScale
     @AppStorage(SettingsKey.notchHeightMode) private var notchHeightModeRaw = SettingsDefaults.notchHeightMode
@@ -1515,6 +1517,18 @@ private struct AppearancePage: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Toggle(l10n["show_usage_stats"], isOn: $showUsageStats)
                     Text(l10n["show_usage_stats_desc"])
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle(l10n["show_codex_quota"], isOn: $showCodexQuota)
+                    Text(l10n["show_codex_quota_desc"])
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle(l10n["show_grok_quota"], isOn: $showGrokQuota)
+                    Text(l10n["show_grok_quota_desc"])
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                 }

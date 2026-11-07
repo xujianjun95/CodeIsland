@@ -1612,6 +1612,7 @@ private func applyHookEvent(
         if let model = hookReportedModel(event) {
             sessions[sessionId]?.model = model
             sessions[sessionId]?.modelReportedAt = Date()
+            if let effort = hookReportedEffort(event) { sessions[sessionId]?.reasoningEffort = effort }
         }
         applyHookProcessId(into: &sessions, sessionId: sessionId, event: event)
         if let source = SessionSnapshot.normalizedSupportedSource(event.rawJSON["_source"] as? String) {
@@ -2080,6 +2081,7 @@ public func extractMetadata(into sessions: inout [String: SessionSnapshot], sess
     if let model = hookReportedModel(event) {
         sessions[sessionId]?.model = model
         sessions[sessionId]?.modelReportedAt = Date()
+        if let effort = hookReportedEffort(event) { sessions[sessionId]?.reasoningEffort = effort }
     }
     if let mode = event.rawJSON["permission_mode"] as? String {
         sessions[sessionId]?.permissionMode = mode
@@ -2238,10 +2240,38 @@ private func stringFromHookJSONValue(_ value: Any?) -> String? {
     return joined.isEmpty ? nil : joined
 }
 
-/// The model a hook names: top-level `model`, or Hermes's `extra.model`.
+/// The model a hook names: top-level `model`, Google Antigravity's camelCase
+/// `modelName`, or Hermes's `extra.model`.
 private func hookReportedModel(_ event: HookEvent) -> String? {
     if let model = event.rawJSON["model"] as? String, !model.isEmpty { return model }
+    if let split = antigravityModelName(event) { return split.model }
     return HermesHookPayload.model(in: event.rawJSON)
+}
+
+/// Reasoning effort a hook names alongside its model — only Google
+/// Antigravity's `modelName` carries one, as a suffix.
+private func hookReportedEffort(_ event: HookEvent) -> String? {
+    if let model = event.rawJSON["model"] as? String, !model.isEmpty { return nil }
+    return antigravityModelName(event)?.effort
+}
+
+private let antigravityEffortSuffixes = ["minimal", "low", "medium", "high", "xhigh", "max"]
+
+/// Antigravity's `modelName` folds the effort into the id
+/// ("claude-opus-5-5-medium"); split it so the card reads "Opus 5.5 · medium"
+/// like other agents. "auto" is Antigravity's placeholder, not a model.
+private func antigravityModelName(_ event: HookEvent) -> (model: String, effort: String?)? {
+    guard let raw = event.rawJSON["modelName"] as? String else { return nil }
+    let id = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !id.isEmpty, id.lowercased() != "auto" else { return nil }
+    if let dash = id.lastIndex(of: "-") {
+        let suffix = id[id.index(after: dash)...].lowercased()
+        let base = String(id[..<dash])
+        if antigravityEffortSuffixes.contains(suffix), !base.isEmpty {
+            return (base, suffix)
+        }
+    }
+    return (id, nil)
 }
 
 private func firstStringFromDict(_ dict: [String: Any], keys: [String]) -> String? {

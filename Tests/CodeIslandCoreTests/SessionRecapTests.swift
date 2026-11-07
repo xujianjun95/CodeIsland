@@ -346,6 +346,23 @@ final class SessionRecapTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(try XCTUnwrap(sessions["s1"]?.modelReportedAt), before)
     }
 
+    func testAntigravityHookModelNameIsRecorded() throws {
+        var sessions: [String: SessionSnapshot] = [:]
+        _ = reduceEvent(sessions: &sessions, event: try hookEvent([
+            "hook_event_name": "PreToolUse", "session_id": "g1",
+            "_source": "google-antigravity", "modelName": "claude-opus-5-5-medium",
+        ]), maxHistory: 10)
+        XCTAssertEqual(sessions["g1"]?.model, "claude-opus-5-5")
+        XCTAssertEqual(sessions["g1"]?.reasoningEffort, "medium")
+        XCTAssertEqual(ModelLabel.label(model: sessions["g1"]?.model, effort: sessions["g1"]?.reasoningEffort), "Opus 5.5 · medium")
+
+        _ = reduceEvent(sessions: &sessions, event: try hookEvent([
+            "hook_event_name": "PreToolUse", "session_id": "g2",
+            "_source": "google-antigravity", "modelName": "auto",
+        ]), maxHistory: 10)
+        XCTAssertNil(sessions["g2"]?.model)
+    }
+
     func testModelSwitchOutputSetsThe1MVariant() {
         let on = scan([assistantLine(model: "claude-opus-5-5", effort: "xhigh"), modelCommandLine, modelOutputLine])
         XCTAssertEqual(on.configuredLongContext, true)
