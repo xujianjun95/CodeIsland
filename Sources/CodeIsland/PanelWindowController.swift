@@ -357,6 +357,13 @@ class PanelWindowController: NSObject, NSWindowDelegate {
                     }
                     self.updateVisibility()
                 }
+                // WindowServer can finish moving Spaces after the notification.
+                // A panel may still report isVisible while left on another Space.
+                for delay in [0.5, 1.5] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                        self?.restorePanelOnActiveSpaceIfNeeded()
+                    }
+                }
             }
         }
 
@@ -708,6 +715,14 @@ class PanelWindowController: NSObject, NSWindowDelegate {
                 }
             }
         }
+    }
+
+    private func restorePanelOnActiveSpaceIfNeeded() {
+        guard let panel, panel.isVisible, !panel.isOnActiveSpace, !isAnimatingScreenHop else { return }
+        let settings = SettingsManager.shared
+        guard !fullscreenHide.hidesIsland(hideInFullscreen: settings.hideInFullscreen),
+              !(settings.hideWhenNoSession && appState.activeSessionCount == 0) else { return }
+        panel.orderFrontRegardless()
     }
 
     /// Update panel visibility based on settings
