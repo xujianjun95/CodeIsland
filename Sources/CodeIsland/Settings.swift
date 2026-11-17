@@ -89,6 +89,7 @@ enum SettingsKey {
     static let showClaudeQuota = "showClaudeQuota"
     static let showCodexQuota = "showCodexQuota"
     static let showGrokQuota = "showGrokQuota"
+    static let showCursorQuota = "showCursorQuota"
     static let claudeQuotaChip = "claudeQuotaChip"              // ClaudeQuotaChipMode raw value
 
     // Completion notification: "expand" | "glance" | "off". Successor of the
@@ -219,6 +220,7 @@ struct SettingsDefaults {
     static let showClaudeQuota = false
     static let showCodexQuota = true
     static let showGrokQuota = true
+    static let showCursorQuota = true
     static let claudeQuotaChip = "auto"
 
     static let rotationInterval = 5
@@ -325,6 +327,7 @@ class SettingsManager {
             SettingsKey.showClaudeQuota: SettingsDefaults.showClaudeQuota,
             SettingsKey.showCodexQuota: SettingsDefaults.showCodexQuota,
             SettingsKey.showGrokQuota: SettingsDefaults.showGrokQuota,
+            SettingsKey.showCursorQuota: SettingsDefaults.showCursorQuota,
             SettingsKey.claudeQuotaChip: SettingsDefaults.claudeQuotaChip,
             SettingsKey.rotationInterval: SettingsDefaults.rotationInterval,
             SettingsKey.maxToolHistory: SettingsDefaults.maxToolHistory,

@@ -13,7 +13,8 @@ let package = Package(
     targets: [
         .target(
             name: "CodeIslandCore",
-            path: "Sources/CodeIslandCore"
+            path: "Sources/CodeIslandCore",
+            linkerSettings: [.linkedLibrary("sqlite3")]
         ),
         .executableTarget(
             name: "CodeIsland",

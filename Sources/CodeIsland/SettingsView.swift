@@ -1348,6 +1348,7 @@ private struct AppearancePage: View {
     @AppStorage(SettingsKey.showClaudeQuota) private var showClaudeQuota = SettingsDefaults.showClaudeQuota
     @AppStorage(SettingsKey.showCodexQuota) private var showCodexQuota = SettingsDefaults.showCodexQuota
     @AppStorage(SettingsKey.showGrokQuota) private var showGrokQuota = SettingsDefaults.showGrokQuota
+    @AppStorage(SettingsKey.showCursorQuota) private var showCursorQuota = SettingsDefaults.showCursorQuota
     @AppStorage(SettingsKey.claudeQuotaChip) private var claudeQuotaChip = SettingsDefaults.claudeQuotaChip
     @AppStorage(SettingsKey.collapsedWidthScale) private var collapsedWidthScale = SettingsDefaults.collapsedWidthScale
     @AppStorage(SettingsKey.notchHeightMode) private var notchHeightModeRaw = SettingsDefaults.notchHeightMode
@@ -1514,30 +1515,14 @@ private struct AppearancePage: View {
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    Toggle(l10n["show_usage_stats"], isOn: $showUsageStats)
-                    Text(l10n["show_usage_stats_desc"])
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Toggle(l10n["show_codex_quota"], isOn: $showCodexQuota)
-                    Text(l10n["show_codex_quota_desc"])
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Toggle(l10n["show_grok_quota"], isOn: $showGrokQuota)
-                    Text(l10n["show_grok_quota_desc"])
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Toggle(l10n["show_claude_quota"], isOn: $showClaudeQuota)
-                    Text(l10n["show_claude_quota_desc"])
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                }
+            }
+
+            Section(l10n["usage_and_limits"]) {
+                CompactUsageSetting(title: l10n["show_usage_stats"], detail: l10n["show_usage_stats_desc"], isOn: $showUsageStats)
+                CompactUsageSetting(title: l10n["show_codex_quota"], detail: l10n["show_codex_quota_desc"], isOn: $showCodexQuota)
+                CompactUsageSetting(title: l10n["show_grok_quota"], detail: l10n["show_grok_quota_desc"], isOn: $showGrokQuota)
+                CompactUsageSetting(title: l10n["show_cursor_quota"], detail: l10n["show_cursor_quota_desc"], isOn: $showCursorQuota)
+                CompactUsageSetting(title: l10n["show_claude_quota"], detail: l10n["show_claude_quota_desc"], isOn: $showClaudeQuota)
                 Picker(l10n["claude_quota_chip"], selection: $claudeQuotaChip) {
                     Text(l10n["quota_chip_off"]).tag(ClaudeQuotaChipMode.off.rawValue)
                     Text(l10n["quota_chip_auto"]).tag(ClaudeQuotaChipMode.auto.rawValue)
@@ -1549,6 +1534,39 @@ private struct AppearancePage: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+private struct CompactUsageSetting: View {
+    let title: String
+    let detail: String
+    @Binding var isOn: Bool
+    @State private var showingDetail = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                showingDetail.toggle()
+            } label: {
+                Image(systemName: "info.circle")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(detail))
+            .help(detail)
+            .popover(isPresented: $showingDetail, arrowEdge: .top) {
+                Text(detail)
+                    .font(.callout)
+                    .frame(maxWidth: 300, alignment: .leading)
+                    .padding(14)
+            }
+            Spacer(minLength: 8)
+            Toggle(title, isOn: $isOn)
+                .labelsHidden()
+        }
+        .padding(.vertical, 2)
     }
 }
 

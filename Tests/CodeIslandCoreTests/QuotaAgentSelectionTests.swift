@@ -30,6 +30,8 @@ final class QuotaAgentSelectionTests: XCTestCase {
         XCTAssertEqual(QuotaAgentSelection.resolve(sessions: idle, activeID: "b"), .codex)
         XCTAssertEqual(QuotaAgentSelection.resolve(sessions: idle, activeID: nil), .claude)
         XCTAssertEqual(QuotaAgentSelection.resolve(sessions: ["g": session("grok", .idle, 5)], activeID: "g"), .grok)
+        XCTAssertEqual(QuotaAgentSelection.resolve(sessions: ["u": session("cursor", .processing, 5)], activeID: "u"), .cursor)
+        XCTAssertEqual(QuotaAgentSelection.resolve(sessions: ["u": session("cursor-cli", .idle, 5)], activeID: "u"), .cursor)
         XCTAssertNil(QuotaAgentSelection.resolve(sessions: [:], activeID: nil))
     }
 }

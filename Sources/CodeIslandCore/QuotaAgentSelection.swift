@@ -1,7 +1,7 @@
 import Foundation
 
 public enum QuotaAgent: Equatable, Sendable {
-    case claude, codex, grok
+    case claude, codex, grok, cursor
 }
 
 public enum QuotaAgentSelection {
@@ -31,6 +31,7 @@ public enum QuotaAgentSelection {
         case "claude": return .claude
         case "codex": return .codex
         case "grok": return .grok
+        case "cursor", "cursor-cli": return .cursor
         default: return nil
         }
     }

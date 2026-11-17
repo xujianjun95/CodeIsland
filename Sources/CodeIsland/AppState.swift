@@ -358,6 +358,41 @@ final class AppState {
         }
         grokQuotaScanInFlight = false
     }
+    var cursorQuota: CursorQuotaSnapshot?
+    var cursorQuotaReadFailed = false
+    var cursorQuotaNeedsLogin = false
+    @ObservationIgnored private var cursorQuotaScanInFlight = false
+    @ObservationIgnored private var cursorQuotaKeychainDenied = false
+
+    func refreshCursorQuota() async {
+        guard !RuntimeEnvironment.isIsolated, !cursorQuotaScanInFlight, !cursorQuotaKeychainDenied else { return }
+        cursorQuotaScanInFlight = true
+        let support = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Cursor")
+        let databaseURL = support.appendingPathComponent("User/globalStorage/state.vscdb")
+        let storageURL = support.appendingPathComponent("User/globalStorage/storage.json")
+        let version = (NSDictionary(contentsOf: URL(fileURLWithPath: "/Applications/Cursor.app/Contents/Info.plist"))?["CFBundleShortVersionString"] as? String) ?? "0.0.0"
+        let result = await Task.detached(priority: .utility) {
+            await CursorQuotaLoader.load(databaseURL: databaseURL, storageURL: storageURL, clientVersion: version)
+        }.value
+        switch result {
+        case .snapshot(let snapshot):
+            cursorQuota = snapshot
+            cursorQuotaReadFailed = false
+            cursorQuotaNeedsLogin = false
+        case .needsLogin:
+            cursorQuotaNeedsLogin = true
+            cursorQuotaReadFailed = false
+        case .failed:
+            cursorQuotaReadFailed = true
+            cursorQuotaNeedsLogin = false
+        case .keychainDenied:
+            cursorQuotaKeychainDenied = true
+            cursorQuotaReadFailed = true
+            cursorQuotaNeedsLogin = false
+        }
+        cursorQuotaScanInFlight = false
+    }
     /// Subscription rate limits (5h / weekly) from Anthropic — opt-in, network.
     let claudeQuota = ClaudeQuotaMonitor()
     /// Process-wide, not per-instance: the scan reads one shared history

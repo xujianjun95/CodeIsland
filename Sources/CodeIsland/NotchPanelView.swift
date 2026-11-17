@@ -611,6 +611,7 @@ private struct CompactLeftWing: View {
     // even when AppState.primarySource wasn't recomputed (no session mutations in flight).
     @AppStorage(SettingsKey.defaultSource) private var settingsDefaultSource = SettingsDefaults.defaultSource
     @AppStorage(SettingsKey.showClaudeQuota) private var showClaudeQuota = SettingsDefaults.showClaudeQuota
+    @AppStorage(SettingsKey.showCursorQuota) private var showCursorQuota = SettingsDefaults.showCursorQuota
     @AppStorage(SettingsKey.claudeQuotaChip) private var claudeQuotaChip = SettingsDefaults.claudeQuotaChip
 
     private var displaySession: SessionSnapshot? {
@@ -699,6 +700,13 @@ private struct CompactLeftWing: View {
             lingerTimer?.invalidate()
             let newTool = liveTool
             withAnimation(.easeInOut(duration: 0.2)) { shownTool = newTool }
+        }
+        .task(id: showCursorQuota && appState.quotaAgent == .cursor) {
+            guard showCursorQuota, appState.quotaAgent == .cursor else { return }
+            while !Task.isCancelled {
+                await appState.refreshCursorQuota()
+                do { try await Task.sleep(for: .seconds(60)) } catch { break }
+            }
         }
     }
 }
@@ -2965,6 +2973,7 @@ private struct SessionListView: View {
     @AppStorage(SettingsKey.showClaudeQuota) private var showClaudeQuota = SettingsDefaults.showClaudeQuota
     @AppStorage(SettingsKey.showCodexQuota) private var showCodexQuota = SettingsDefaults.showCodexQuota
     @AppStorage(SettingsKey.showGrokQuota) private var showGrokQuota = SettingsDefaults.showGrokQuota
+    @AppStorage(SettingsKey.showCursorQuota) private var showCursorQuota = SettingsDefaults.showCursorQuota
     @AppStorage(SettingsKey.sessionListDensity) private var densityRaw = SettingsDefaults.sessionListDensity
     @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
     @AppStorage(SettingsKey.showProjectName) private var showProjectName = SettingsDefaults.showProjectName
@@ -3172,6 +3181,9 @@ private struct SessionListView: View {
                 if appState.quotaAgent == .grok && showGrokQuota {
                     GrokQuotaFooter(appState: appState)
                 }
+                if appState.quotaAgent == .cursor && showCursorQuota {
+                    CursorQuotaFooter(appState: appState)
+                }
             }
         }
     }
@@ -3222,11 +3234,65 @@ private struct QuotaSentenceBlock: View {
             .lineLimit(1)
             .minimumScaleFactor(0.7)
             .font(.system(size: 10, weight: .medium, design: .monospaced))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(.white.opacity(0.65))
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 14)
             .padding(.vertical, 5)
             .help(help)
+    }
+}
+
+private enum CursorQuotaCopy {
+    static func line(_ snapshot: CursorQuotaSnapshot, l10n: L10n, now: Date) -> String {
+        QuotaSentenceStyle.line(
+            name: "Cursor",
+            window: l10n["quota_window_cycle"],
+            percent: snapshot.usedPercent,
+            resetsAt: snapshot.resetsAt,
+            l10n: l10n,
+            now: now
+        )
+    }
+
+    static func help(_ snapshot: CursorQuotaSnapshot, l10n: L10n) -> String {
+        var lines: [String] = []
+        if let message = snapshot.displayMessage { lines.append(message) }
+        if let auto = snapshot.autoUsedPercent {
+            lines.append("\(l10n["cursor_quota_auto"]) \(Int(auto.rounded()))%")
+        }
+        if let api = snapshot.apiUsedPercent {
+            lines.append("\(l10n["cursor_quota_api"]) \(Int(api.rounded()))%")
+        }
+        lines.append("\(l10n["codex_quota_updated"]) \(snapshot.capturedAt.formatted(date: .abbreviated, time: .shortened))")
+        return lines.joined(separator: "\n")
+    }
+}
+
+private struct CursorQuotaFooter: View {
+    var appState: AppState
+    @ObservedObject private var l10n = L10n.shared
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            if let snapshot = appState.cursorQuota {
+                QuotaSentenceBlock(
+                    lines: [CursorQuotaCopy.line(snapshot, l10n: l10n, now: context.date)],
+                    help: CursorQuotaCopy.help(snapshot, l10n: l10n)
+                )
+            } else {
+                Text(l10n[appState.cursorQuotaReadFailed ? "cursor_quota_read_failed" : "cursor_quota_unavailable"])
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 5)
+            }
+        }
+        .task {
+            while !Task.isCancelled {
+                await appState.refreshCursorQuota()
+                do { try await Task.sleep(for: .seconds(60)) } catch { break }
+            }
+        }
     }
 }
 
@@ -3253,7 +3319,7 @@ private struct GrokQuotaFooter: View {
             } else {
                 Text(l10n[appState.grokQuotaReadFailed ? "grok_quota_read_failed" : "grok_quota_unavailable"])
                     .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.white.opacity(0.55))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 5)
             }
@@ -3311,7 +3377,7 @@ private struct CodexQuotaFooter: View {
             } else {
                 Text(l10n[appState.codexQuotaReadFailed ? "codex_quota_read_failed" : "codex_quota_unavailable"])
                     .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.white.opacity(0.55))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 5)
             }
