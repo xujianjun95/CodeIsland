@@ -123,6 +123,28 @@ final class CLIProcessResolverTests: XCTestCase {
         }
     }
 
+    func testDesktopAppServerLaunchedByChatGPTHelper() {
+        let helperPath = "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/158.0.8127.37/Helpers/Codex (Aperitif).app/Contents/MacOS/Codex (Aperitif)"
+        let helper = ProcessAncestor(
+            pid: 850,
+            executablePath: helperPath,
+            arguments: ["Codex (Aperitif)", "--type=utility", "--utility-sub-type=node.mojom.NodeService"],
+            bundleIdentifier: "com.openai.codex"
+        )
+        let codex = bundledCodex(desktopArguments)
+        XCTAssertEqual(CLIProcessResolver.codexDesktopTermBundle(ancestry: [codex, helper]), "com.openai.codex")
+        XCTAssertEqual(CLIProcessResolver.codexBundledProcessRole(ancestry: [codex, helper]), .desktopHost)
+        XCTAssertNil(CLIProcessResolver.codexDesktopTermBundle(ancestry: [bundledCodex(["codex"]), helper]))
+
+        let differentRole = ProcessAncestor(
+            pid: 851,
+            executablePath: helperPath,
+            arguments: ["Codex (Aperitif)", "--type=gpu-process"],
+            bundleIdentifier: "com.openai.codex"
+        )
+        XCTAssertNil(CLIProcessResolver.codexDesktopTermBundle(ancestry: [codex, differentRole]))
+    }
+
     func testAppServerLaunchedByBundledToolIsNotDesktopHost() {
         let broker = ProcessAncestor(
             pid: 850,

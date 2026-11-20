@@ -261,23 +261,42 @@ public enum CLIProcessResolver {
     /// `codex-cli/bin/codex` launcher) and the app-server Claude Code's Codex
     /// plugin starts (#368), and its own outermost `.app` is ChatGPT.app every
     /// time. So the nearest Codex process must run the `app-server` subcommand,
-    /// and its direct parent must be the app itself; `exec codex` in ChatGPT's
-    /// own terminal also leaves ChatGPT as the parent.
-    /// Bundled tool hosts share that outer bundle ID, so the parent must also
-    /// be an executable in the host app's own `Contents/MacOS` directory.
+    /// and its direct parent must be the app itself or its packaged Node
+    /// utility process. Other bundled tool hosts share the outer bundle ID
+    /// but launch separate app-servers.
     public static func codexDesktopTermBundle(ancestry: [ProcessAncestor]) -> String? {
         guard let codexIndex = ancestry.firstIndex(where: {
             sourceMatchesExecutablePath($0.executablePath ?? "", source: "codex")
         }), isCodexAppServerInvocation(ancestry[codexIndex].arguments),
-              codexIndex + 1 < ancestry.count,
-              ancestry[codexIndex + 1].bundleIdentifier == "com.openai.codex",
-              let parentPath = ancestry[codexIndex + 1].executablePath,
-              let appPath = HostHarnessResolver.outermostAppBundlePath(forExecutable: parentPath),
-              URL(fileURLWithPath: parentPath).standardizedFileURL.deletingLastPathComponent().path
-                == URL(fileURLWithPath: appPath).standardizedFileURL.appendingPathComponent("Contents/MacOS").path else {
+              codexIndex + 1 < ancestry.count else {
             return nil
         }
-        return "com.openai.codex"
+        let parent = ancestry[codexIndex + 1]
+        guard parent.bundleIdentifier == "com.openai.codex",
+              let parentPath = parent.executablePath,
+              let appPath = HostHarnessResolver.outermostAppBundlePath(forExecutable: parentPath) else {
+            return nil
+        }
+        let app = URL(fileURLWithPath: appPath).standardizedFileURL
+        let executable = URL(fileURLWithPath: parentPath).standardizedFileURL
+        if executable.deletingLastPathComponent().path == app.appendingPathComponent("Contents/MacOS").path {
+            return parent.bundleIdentifier
+        }
+
+        // The Chromium framework's version directory can change on every update.
+        let framework = app.appendingPathComponent("Contents/Frameworks/Codex Framework.framework/Versions")
+        let helperPath = executable.pathComponents.dropFirst(framework.pathComponents.count)
+        guard executable.pathComponents.starts(with: framework.pathComponents),
+              helperPath.count == 6,
+              helperPath.dropFirst().elementsEqual([
+                "Helpers", "Codex (Aperitif).app", "Contents", "MacOS", "Codex (Aperitif)"
+              ]),
+              parent.arguments.contains("--utility-sub-type=node.mojom.NodeService"),
+              let codexPath = ancestry[codexIndex].executablePath,
+              HostHarnessResolver.outermostAppBundlePath(forExecutable: codexPath) == appPath else {
+            return nil
+        }
+        return parent.bundleIdentifier
     }
 
     /// Desktop runs `codex [-c key=value]… app-server …`. Anything else ahead

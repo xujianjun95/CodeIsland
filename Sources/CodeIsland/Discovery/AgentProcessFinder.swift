@@ -735,6 +735,7 @@ enum AgentProcessFinder {
             ancestry.append(ProcessAncestor(
                 pid: parent,
                 executablePath: parentPath,
+                arguments: ProcessTable.getProcessArgs(parent) ?? [],
                 bundleIdentifier: HostHarnessResolver.outermostAppBundlePath(forExecutable: parentPath)
                     .flatMap { Bundle(path: $0)?.bundleIdentifier }
             ))

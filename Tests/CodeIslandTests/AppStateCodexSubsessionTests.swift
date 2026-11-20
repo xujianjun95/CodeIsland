@@ -101,6 +101,40 @@ final class AppStateCodexSubsessionTests: XCTestCase {
         )
     }
 
+    func testRestoreCoalescesMisclassifiedDesktopCardAndPreservesCLI() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let threadId = UUID().uuidString
+        let desktopKey = "codexapp:" + threadId
+        let transcript = directory.appendingPathComponent("desktop.jsonl")
+        try #"{"type":"session_meta","payload":{"originator":"Codex Desktop","source":"vscode"}}"#
+            .write(to: transcript, atomically: true, encoding: .utf8)
+
+        var desktop = SessionSnapshot()
+        desktop.source = "codex"
+        desktop.providerSessionId = threadId
+        desktop.transcriptPath = transcript.path
+        desktop.lastUserPrompt = "Desktop prompt"
+        desktop.termBundleId = AppState.codexAppBundleId
+        var duplicate = desktop
+        duplicate.termBundleId = nil
+        duplicate.lastActivity = desktop.lastActivity.addingTimeInterval(1)
+
+        var cli = duplicate
+        cli.providerSessionId = "cli-thread"
+        cli.transcriptPath = nil
+        SessionPersistence.save([desktopKey: desktop, threadId: duplicate, "cli-thread": cli],
+                                directory: directory.path)
+
+        let appState = AppState()
+        appState.restoreSessions(from: SessionPersistence.load(directory: directory.path))
+        XCTAssertEqual(Set(appState.sessions.keys), [desktopKey, "cli-thread"])
+        XCTAssertEqual(appState.sessions[desktopKey].flatMap {
+            TerminalActivator.codexDesktopThreadLink(for: $0)?.absoluteString
+        }, "codex://threads/" + threadId)
+    }
+
     func testSequentialDesktopRolloutAndDatabaseScansKeepOneCardAndRejectStaleStatus() {
         let appState = AppState()
         let rawId = "same-provider-thread"

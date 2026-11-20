@@ -3445,15 +3445,32 @@ final class AppState {
     }
 
     func restoreSessions() {
-        let persisted = SessionPersistence.load()
+        restoreSessions(from: SessionPersistence.load())
+        SessionPersistence.clear()
+    }
+
+    func restoreSessions(from persisted: [PersistedSession]) {
         let cutoff = Date().addingTimeInterval(-30 * 60) // 30 minutes
-        for p in persisted where p.lastActivity > cutoff {
+        let recent = persisted.filter { $0.lastActivity > cutoff }
+            .sorted { $0.lastActivity > $1.lastActivity }
+        for p in recent {
             guard let source = SessionSnapshot.normalizedSupportedSource(p.source) else { continue }
+            var termBundleId = p.termBundleId
+            var providerSessionId = p.providerSessionId
+            // Older hooks could store Desktop transcripts under a raw CLI key.
+            if source == "codex", termBundleId == nil, p.termApp == nil, p.ttyPath == nil,
+               UUID(uuidString: p.sessionId) != nil,
+               providerSessionId == nil || providerSessionId == p.sessionId,
+               let path = p.transcriptPath,
+               CodexDiscovery.codexTranscriptOrigin(path: path, allowImplicitDesktop: false) == .desktop {
+                termBundleId = Self.codexAppBundleId
+                providerSessionId = p.sessionId
+            }
             let restoredSessionId = CodexDiscovery.canonicalRestoredCodexSessionId(
                 sessionId: p.sessionId,
                 source: source,
-                providerSessionId: p.providerSessionId,
-                termBundleId: p.termBundleId
+                providerSessionId: providerSessionId,
+                termBundleId: termBundleId
             )
             guard sessions[restoredSessionId] == nil else { continue }
             var snapshot = SessionSnapshot(startTime: p.startTime)
@@ -3462,7 +3479,7 @@ final class AppState {
             snapshot.model = p.model
             snapshot.sessionTitle = p.sessionTitle
             snapshot.sessionTitleSource = p.sessionTitleSource
-            snapshot.providerSessionId = p.providerSessionId
+            snapshot.providerSessionId = providerSessionId
             snapshot.lastUserPrompt = p.lastUserPrompt
             snapshot.lastAssistantMessage = p.lastAssistantMessage
             if let prompt = p.lastUserPrompt {
@@ -3478,7 +3495,7 @@ final class AppState {
             snapshot.tmuxPane = p.tmuxPane
             snapshot.tmuxClientTty = p.tmuxClientTty
             snapshot.tmuxEnv = p.tmuxEnv
-            snapshot.termBundleId = p.termBundleId
+            snapshot.termBundleId = termBundleId
             snapshot.cmuxSurfaceId = p.cmuxSurfaceId
             snapshot.cmuxWorkspaceId = p.cmuxWorkspaceId
             snapshot.zellijPaneId = p.zellijPaneId
@@ -3542,7 +3559,6 @@ final class AppState {
             // Harness is re-probed, not persisted — it may have restarted between runs.
             maybeResolveHostHarness(for: restoredSessionId)
         }
-        SessionPersistence.clear()
         _ = applyCodexSubsessionModeToKnownSessions()
         _ = applyCursorSubsessionModeToKnownSessions()
         if activeSessionId == nil {

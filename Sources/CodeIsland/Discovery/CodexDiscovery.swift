@@ -191,7 +191,7 @@ enum CodexDiscovery {
     /// rollouts from CLI rollouts when both exist under `~/.codex/sessions`.
     /// Unknown future shapes remain eligible for the owning process as a
     /// best-effort fallback instead of being dropped.
-    static func codexTranscriptOrigin(path: String) -> CodexTranscriptOrigin {
+    static func codexTranscriptOrigin(path: String, allowImplicitDesktop: Bool = true) -> CodexTranscriptOrigin {
         guard let firstLine = SessionDiscovery.readFirstLine(path: path),
               let data = firstLine.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -215,7 +215,7 @@ enum CodexDiscovery {
         if !originator.isEmpty, isAppServerSource || isSubagentSource {
             return .cli
         }
-        if isAppServerSource {
+        if isAppServerSource, allowImplicitDesktop {
             return .desktop
         }
         if originator.contains("cli") || source == "cli" || source == "exec" {
