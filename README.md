@@ -1,4 +1,4 @@
-# CodeIsland 定制版
+# CodeIsland JJ
 
 CodeIsland 在 MacBook 刘海处显示 AI 编码助手的会话状态。展开面板可以查看进度、处理审批，或点击卡片回到对应会话。
 
