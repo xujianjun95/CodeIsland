@@ -1349,6 +1349,7 @@ private struct AppearancePage: View {
     @AppStorage(SettingsKey.showCodexQuota) private var showCodexQuota = SettingsDefaults.showCodexQuota
     @AppStorage(SettingsKey.showGrokQuota) private var showGrokQuota = SettingsDefaults.showGrokQuota
     @AppStorage(SettingsKey.showCursorQuota) private var showCursorQuota = SettingsDefaults.showCursorQuota
+    @AppStorage(SettingsKey.showAntigravityQuota) private var showAntigravityQuota = SettingsDefaults.showAntigravityQuota
     @AppStorage(SettingsKey.claudeQuotaChip) private var claudeQuotaChip = SettingsDefaults.claudeQuotaChip
     @AppStorage(SettingsKey.collapsedWidthScale) private var collapsedWidthScale = SettingsDefaults.collapsedWidthScale
     @AppStorage(SettingsKey.notchHeightMode) private var notchHeightModeRaw = SettingsDefaults.notchHeightMode
@@ -1522,6 +1523,7 @@ private struct AppearancePage: View {
                 CompactUsageSetting(title: l10n["show_codex_quota"], detail: l10n["show_codex_quota_desc"], isOn: $showCodexQuota)
                 CompactUsageSetting(title: l10n["show_grok_quota"], detail: l10n["show_grok_quota_desc"], isOn: $showGrokQuota)
                 CompactUsageSetting(title: l10n["show_cursor_quota"], detail: l10n["show_cursor_quota_desc"], isOn: $showCursorQuota)
+                CompactUsageSetting(title: l10n["show_antigravity_quota"], detail: l10n["show_antigravity_quota_desc"], isOn: $showAntigravityQuota)
                 CompactUsageSetting(title: l10n["show_claude_quota"], detail: l10n["show_claude_quota_desc"], isOn: $showClaudeQuota)
                 Picker(l10n["claude_quota_chip"], selection: $claudeQuotaChip) {
                     Text(l10n["quota_chip_off"]).tag(ClaudeQuotaChipMode.off.rawValue)

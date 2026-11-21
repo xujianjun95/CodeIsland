@@ -612,6 +612,7 @@ private struct CompactLeftWing: View {
     @AppStorage(SettingsKey.defaultSource) private var settingsDefaultSource = SettingsDefaults.defaultSource
     @AppStorage(SettingsKey.showClaudeQuota) private var showClaudeQuota = SettingsDefaults.showClaudeQuota
     @AppStorage(SettingsKey.showCursorQuota) private var showCursorQuota = SettingsDefaults.showCursorQuota
+    @AppStorage(SettingsKey.showAntigravityQuota) private var showAntigravityQuota = SettingsDefaults.showAntigravityQuota
     @AppStorage(SettingsKey.claudeQuotaChip) private var claudeQuotaChip = SettingsDefaults.claudeQuotaChip
 
     private var displaySession: SessionSnapshot? {
@@ -705,6 +706,13 @@ private struct CompactLeftWing: View {
             guard showCursorQuota, appState.quotaAgent == .cursor else { return }
             while !Task.isCancelled {
                 await appState.refreshCursorQuota()
+                do { try await Task.sleep(for: .seconds(60)) } catch { break }
+            }
+        }
+        .task(id: showAntigravityQuota && appState.quotaAgent == .antigravity) {
+            guard showAntigravityQuota, appState.quotaAgent == .antigravity else { return }
+            while !Task.isCancelled {
+                await appState.refreshAntigravityQuota()
                 do { try await Task.sleep(for: .seconds(60)) } catch { break }
             }
         }
@@ -2974,6 +2982,7 @@ private struct SessionListView: View {
     @AppStorage(SettingsKey.showCodexQuota) private var showCodexQuota = SettingsDefaults.showCodexQuota
     @AppStorage(SettingsKey.showGrokQuota) private var showGrokQuota = SettingsDefaults.showGrokQuota
     @AppStorage(SettingsKey.showCursorQuota) private var showCursorQuota = SettingsDefaults.showCursorQuota
+    @AppStorage(SettingsKey.showAntigravityQuota) private var showAntigravityQuota = SettingsDefaults.showAntigravityQuota
     @AppStorage(SettingsKey.sessionListDensity) private var densityRaw = SettingsDefaults.sessionListDensity
     @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
     @AppStorage(SettingsKey.showProjectName) private var showProjectName = SettingsDefaults.showProjectName
@@ -3184,6 +3193,9 @@ private struct SessionListView: View {
                 if appState.quotaAgent == .cursor && showCursorQuota {
                     CursorQuotaFooter(appState: appState)
                 }
+                if appState.quotaAgent == .antigravity && showAntigravityQuota {
+                    AntigravityQuotaFooter(appState: appState)
+                }
             }
         }
     }
@@ -3290,6 +3302,90 @@ private struct CursorQuotaFooter: View {
         .task {
             while !Task.isCancelled {
                 await appState.refreshCursorQuota()
+                do { try await Task.sleep(for: .seconds(60)) } catch { break }
+            }
+        }
+    }
+}
+
+private enum AntigravityQuotaCopy {
+    static func lines(_ snapshot: AntigravityQuotaSnapshot, l10n: L10n, now: Date) -> [String] {
+        let windows = Array(snapshot.primaryGroup.windows.prefix(2))
+        return windows.enumerated().map { index, window in
+            QuotaSentenceStyle.line(
+                name: index == 0 ? "Antigravity" : nil,
+                window: windowLabel(window.label, l10n: l10n),
+                percent: window.usedPercent,
+                resetsAt: window.resetsAt,
+                l10n: l10n,
+                now: now
+            )
+        }
+    }
+
+    static func help(_ snapshot: AntigravityQuotaSnapshot, l10n: L10n) -> String {
+        var lines: [String] = []
+        if let plan = snapshot.planName {
+            lines.append(plan)
+        }
+        let multiGroup = snapshot.groups.count > 1
+        for group in snapshot.groups {
+            for window in group.windows {
+                let label = windowLabel(window.label, l10n: l10n)
+                let used = Int(window.usedPercent.rounded())
+                if multiGroup {
+                    lines.append("\(group.name) · \(label): \(used)%")
+                } else {
+                    lines.append("\(label): \(used)%")
+                }
+            }
+        }
+        lines.append("\(l10n["codex_quota_updated"]) \(snapshot.capturedAt.formatted(date: .abbreviated, time: .shortened))")
+        return lines.joined(separator: "\n")
+    }
+
+    static func windowLabel(_ raw: String, l10n: L10n) -> String {
+        let lowered = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch lowered {
+        case "5h":
+            return l10n["quota_window_5h"]
+        case "weekly", "week", "7d":
+            return l10n["quota_window_week"]
+        case "cycle":
+            return l10n["quota_window_cycle"]
+        default:
+            if lowered.hasSuffix("h"), let hours = Int(lowered.dropLast()), hours > 0 {
+                return hours == 5 ? l10n["quota_window_5h"] : String(format: l10n["quota_window_hours"], hours)
+            }
+            return raw
+        }
+    }
+}
+
+private struct AntigravityQuotaFooter: View {
+    var appState: AppState
+    @ObservedObject private var l10n = L10n.shared
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            if let snapshot = appState.antigravityQuota {
+                QuotaSentenceBlock(
+                    lines: AntigravityQuotaCopy.lines(snapshot, l10n: l10n, now: context.date),
+                    help: appState.antigravityQuotaReadFailed
+                        ? l10n["antigravity_quota_read_failed"]
+                        : AntigravityQuotaCopy.help(snapshot, l10n: l10n)
+                )
+            } else {
+                Text(l10n[appState.antigravityQuotaReadFailed ? "antigravity_quota_read_failed" : "antigravity_quota_unavailable"])
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 5)
+            }
+        }
+        .task {
+            while !Task.isCancelled {
+                await appState.refreshAntigravityQuota()
                 do { try await Task.sleep(for: .seconds(60)) } catch { break }
             }
         }

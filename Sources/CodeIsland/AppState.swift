@@ -393,6 +393,31 @@ final class AppState {
         }
         cursorQuotaScanInFlight = false
     }
+    var antigravityQuota: AntigravityQuotaSnapshot?
+    var antigravityQuotaReadFailed = false
+    var antigravityQuotaNotRunning = false
+    @ObservationIgnored private var antigravityQuotaScanInFlight = false
+
+    func refreshAntigravityQuota() async {
+        guard !RuntimeEnvironment.isIsolated, !antigravityQuotaScanInFlight else { return }
+        antigravityQuotaScanInFlight = true
+        let result = await Task.detached(priority: .utility) {
+            await AntigravityQuotaLoader.load()
+        }.value
+        switch result {
+        case .snapshot(let snapshot):
+            antigravityQuota = snapshot
+            antigravityQuotaReadFailed = false
+            antigravityQuotaNotRunning = false
+        case .notRunning:
+            antigravityQuotaNotRunning = true
+            antigravityQuotaReadFailed = false
+        case .failed:
+            antigravityQuotaReadFailed = true
+            antigravityQuotaNotRunning = false
+        }
+        antigravityQuotaScanInFlight = false
+    }
     /// Subscription rate limits (5h / weekly) from Anthropic — opt-in, network.
     let claudeQuota = ClaudeQuotaMonitor()
     /// Process-wide, not per-instance: the scan reads one shared history
