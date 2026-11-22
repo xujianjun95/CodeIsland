@@ -39,4 +39,25 @@ final class CodexQuotaTests: XCTestCase {
         let snapshot = try XCTUnwrap(CodexQuotaLoader.load(root: directory))
         XCTAssertEqual(snapshot.windows.first?.usedPercent, 30)
     }
+
+    func testLowestRemainingWindowPicksTighterWindowAndShortWindowOnTie() {
+        let tighterWeekly = CodexQuotaSnapshot(
+            capturedAt: Date(),
+            windows: [
+                CodexQuotaWindow(usedPercent: 10, minutes: 300, resetsAt: nil),
+                CodexQuotaWindow(usedPercent: 97, minutes: 10080, resetsAt: nil),
+            ]
+        )
+        XCTAssertEqual(tighterWeekly.lowestRemainingWindow()?.minutes, 10080)
+        XCTAssertEqual(tighterWeekly.lowestRemainingWindow()?.remainingPercent ?? -1, 3, accuracy: 0.001)
+
+        let tied = CodexQuotaSnapshot(
+            capturedAt: Date(),
+            windows: [
+                CodexQuotaWindow(usedPercent: 0, minutes: 10080, resetsAt: nil),
+                CodexQuotaWindow(usedPercent: 0, minutes: 300, resetsAt: nil),
+            ]
+        )
+        XCTAssertEqual(tied.lowestRemainingWindow()?.minutes, 300)
+    }
 }

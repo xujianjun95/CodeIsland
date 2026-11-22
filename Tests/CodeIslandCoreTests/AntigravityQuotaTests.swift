@@ -166,6 +166,7 @@ final class AntigravityQuotaTests: XCTestCase {
               "groups": [
                 {
                   "name": "Gemini Models",
+                  "description": "Models within this group: Gemini 4 Neon, Gemini 4 Hydrogen, Orchestrator (Neon), Gemini 3.8 Flash",
                   "buckets": [
                     {
                       "id": "gemini-weekly",
@@ -185,6 +186,7 @@ final class AntigravityQuotaTests: XCTestCase {
                 },
                 {
                   "name": "Claude and GPT models",
+                  "description": "Models within this group: Claude Opus 5.5, Claude Sonnet 5.5, GPT-OSS 120B",
                   "buckets": [
                     {
                       "id": "3p-weekly",
@@ -237,5 +239,70 @@ final class AntigravityQuotaTests: XCTestCase {
             isExecutable: { $0 == "/Users/demo/.local/bin/agy" }
         )
         XCTAssertEqual(found, "/Users/demo/.local/bin/agy")
+    }
+
+    func testGroupForModelMatchesAllThreePoolsAndShortNames() {
+        let gemini = AntigravityQuotaGroup(
+            name: "Gemini Models",
+            description: "Models within this group: Gemini 4 Neon, Gemini 4 Hydrogen, Orchestrator (Neon), Gemini 3.8 Flash",
+            windows: [.init(id: "gemini-5h", label: "5h", usedPercent: 8, resetsAt: nil)]
+        )
+        let thirdParty = AntigravityQuotaGroup(
+            name: "Claude and GPT models",
+            description: "Models within this group: Claude Opus 5.5, Claude Sonnet 5.5, GPT-OSS 120B",
+            windows: [.init(id: "3p-5h", label: "5h", usedPercent: 0, resetsAt: nil)]
+        )
+        let argon = AntigravityQuotaGroup(
+            name: "Gemini 4 Argon",
+            description: "For paid Pro plans, Argon quota is separate.",
+            windows: [.init(id: "gemini-argon-wtu-weekly", label: "weekly", usedPercent: 0, resetsAt: nil)]
+        )
+        let snapshot = AntigravityQuotaSnapshot(
+            capturedAt: Date(),
+            planName: nil,
+            primaryGroup: gemini,
+            groups: [gemini, thirdParty, argon]
+        )
+
+        XCTAssertEqual(gemini.shortName, "Gemini")
+        XCTAssertEqual(thirdParty.shortName, "Claude/GPT")
+        XCTAssertEqual(argon.shortName, "Argon")
+
+        XCTAssertEqual(snapshot.group(forModel: "gemini-4-neon").name, "Gemini Models")
+        XCTAssertEqual(snapshot.group(forModel: "claude-opus-5-5").name, "Claude and GPT models")
+        XCTAssertEqual(snapshot.group(forModel: "gpt-oss-120b").name, "Claude and GPT models")
+        XCTAssertEqual(snapshot.group(forModel: "gemini-4-argon").name, "Gemini 4 Argon")
+        XCTAssertEqual(snapshot.group(forModel: "auto").name, "Gemini Models")
+        XCTAssertEqual(snapshot.group(forModel: nil).name, "Gemini Models")
+    }
+
+    func testRemainingPercentClampsBounds() {
+        let normal = AntigravityQuotaWindow(id: "w1", label: "5h", usedPercent: 12.9, resetsAt: nil)
+        let over = AntigravityQuotaWindow(id: "w2", label: "5h", usedPercent: 120, resetsAt: nil)
+        let negative = AntigravityQuotaWindow(id: "w3", label: "5h", usedPercent: -5, resetsAt: nil)
+
+        XCTAssertEqual(normal.remainingPercent, 87.1, accuracy: 0.001)
+        XCTAssertEqual(over.remainingPercent, 0, accuracy: 0.001)
+        XCTAssertEqual(negative.remainingPercent, 100, accuracy: 0.001)
+    }
+
+    func testLowestRemainingWindowPicksTighterWindowAndBreaksTiesWithShortWindow() {
+        let tighterWeekly = AntigravityQuotaGroup(
+            name: "Gemini Models",
+            windows: [
+                .init(id: "gemini-5h", label: "5h", usedPercent: 10, resetsAt: nil),
+                .init(id: "gemini-weekly", label: "weekly", usedPercent: 90, resetsAt: nil),
+            ]
+        )
+        XCTAssertEqual(tighterWeekly.lowestRemainingWindow()?.id, "gemini-weekly")
+
+        let tied = AntigravityQuotaGroup(
+            name: "Claude and GPT models",
+            windows: [
+                .init(id: "3p-5h", label: "5h", usedPercent: 0, resetsAt: nil),
+                .init(id: "3p-weekly", label: "weekly", usedPercent: 0, resetsAt: nil),
+            ]
+        )
+        XCTAssertEqual(tied.lowestRemainingWindow()?.id, "3p-5h")
     }
 }

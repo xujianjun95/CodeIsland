@@ -4,11 +4,24 @@ public struct CodexQuotaWindow: Equatable, Sendable {
     public let usedPercent: Double
     public let minutes: Int
     public let resetsAt: Date?
+
+    public var remainingPercent: Double {
+        min(max(100.0 - usedPercent, 0), 100)
+    }
 }
 
 public struct CodexQuotaSnapshot: Equatable, Sendable {
     public let capturedAt: Date
     public let windows: [CodexQuotaWindow]
+
+    public func lowestRemainingWindow() -> CodexQuotaWindow? {
+        windows.min { lhs, rhs in
+            if lhs.remainingPercent != rhs.remainingPercent {
+                return lhs.remainingPercent < rhs.remainingPercent
+            }
+            return lhs.minutes < rhs.minutes
+        }
+    }
 }
 
 /// Reads only existing local Codex rollout records. No credentials or network access.

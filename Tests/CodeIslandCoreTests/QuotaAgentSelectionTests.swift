@@ -2,11 +2,12 @@ import XCTest
 @testable import CodeIslandCore
 
 final class QuotaAgentSelectionTests: XCTestCase {
-    private func session(_ source: String, _ status: AgentStatus, _ seconds: TimeInterval) -> SessionSnapshot {
+    private func session(_ source: String, _ status: AgentStatus, _ seconds: TimeInterval, model: String? = nil) -> SessionSnapshot {
         var session = SessionSnapshot()
         session.source = source
         session.status = status
         session.lastActivity = Date(timeIntervalSince1970: seconds)
+        session.model = model
         return session
     }
 
@@ -34,6 +35,23 @@ final class QuotaAgentSelectionTests: XCTestCase {
         XCTAssertEqual(QuotaAgentSelection.resolve(sessions: ["u": session("cursor-cli", .idle, 5)], activeID: "u"), .cursor)
         XCTAssertEqual(QuotaAgentSelection.resolve(sessions: ["ag": session("google-antigravity", .processing, 5)], activeID: "ag"), .antigravity)
         XCTAssertEqual(QuotaAgentSelection.resolve(sessions: ["ag": session("agy", .idle, 5)], activeID: "ag"), .antigravity)
+        XCTAssertEqual(
+            QuotaAgentSelection.resolveSession(
+                sessions: ["ag": session("google-antigravity", .processing, 5, model: "claude-opus-5-5")],
+                activeID: "ag"
+            )?.model,
+            "claude-opus-5-5"
+        )
         XCTAssertNil(QuotaAgentSelection.resolve(sessions: [:], activeID: nil))
+    }
+
+    func testResolveMostRecentSessionPrefersLatestIdleOverStaleActiveID() {
+        let sessions = [
+            "ag": session("google-antigravity", .idle, 10, model: "gemini-4-neon"),
+            "cx": session("codex", .idle, 50),
+        ]
+        let resolved = QuotaAgentSelection.resolveMostRecentSession(sessions: sessions, activeID: "ag")
+        XCTAssertEqual(QuotaAgentSelection.agent(for: resolved), .codex)
+        XCTAssertNil(QuotaAgentSelection.resolveMostRecentSession(sessions: [:], activeID: nil))
     }
 }

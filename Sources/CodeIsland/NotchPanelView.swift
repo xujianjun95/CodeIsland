@@ -124,6 +124,10 @@ struct NotchPanelView: View {
     @AppStorage(SettingsKey.showToolStatus) private var showToolStatus = SettingsDefaults.showToolStatus
     @AppStorage(SettingsKey.collapsedWidthScale) private var collapsedWidthScale = SettingsDefaults.collapsedWidthScale
     @AppStorage(SettingsKey.showClaudeQuota) private var showClaudeQuota = SettingsDefaults.showClaudeQuota
+    @AppStorage(SettingsKey.showCodexQuota) private var showCodexQuota = SettingsDefaults.showCodexQuota
+    @AppStorage(SettingsKey.showGrokQuota) private var showGrokQuota = SettingsDefaults.showGrokQuota
+    @AppStorage(SettingsKey.showCursorQuota) private var showCursorQuota = SettingsDefaults.showCursorQuota
+    @AppStorage(SettingsKey.showAntigravityQuota) private var showAntigravityQuota = SettingsDefaults.showAntigravityQuota
     @AppStorage(SettingsKey.claudeQuotaChip) private var claudeQuotaChip = SettingsDefaults.claudeQuotaChip
     @AppStorage(SettingsKey.hapticOnHover) private var hapticOnHover = SettingsDefaults.hapticOnHover
     @AppStorage(SettingsKey.hapticIntensity) private var hapticIntensity = SettingsDefaults.hapticIntensity
@@ -234,22 +238,66 @@ struct NotchPanelView: View {
         return extra + toolExtra
     }
 
+    private var centeredCollapsedQuotaChip: CollapsedQuotaChipModel? {
+        guard showBar, !shouldShowExpanded, !hasNotch,
+              appState.status == .idle || !showToolStatus,
+              QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip) == nil else {
+            return nil
+        }
+        return CollapsedQuotaChipModel.resolve(
+            appState: appState,
+            showCodex: showCodexQuota,
+            showGrok: showGrokQuota,
+            showCursor: showCursorQuota,
+            showAntigravity: showAntigravityQuota,
+            l10n: L10n.shared,
+            includeAllWindows: true
+        )
+    }
+
     /// Room for the plan-limit chip in the collapsed bar; `.none` whenever the
     /// chip isn't shown, which leaves the bar exactly as it is without it.
     private var quotaReserve: QuotaChipLayout.Reserve {
-        guard showBar, !shouldShowExpanded,
-              let limit = QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip)
-        else { return .none }
-        // Measured once laid out; the label-length estimate covers the first frame.
-        let chipWidth = quotaChipWidth > 0 ? quotaChipWidth : QuotaChip.estimatedWidth(for: limit)
-        return QuotaChipLayout.reserve(
-            chipWidth: chipWidth,
-            mascotSize: mascotSize,
-            wing: compactWingWidth,
-            statusExtra: collapsedStatusExtra,
-            hasNotch: hasNotch,
-            spareWidth: maxPanelWidth - collapsedBarWidth
-        )
+        guard showBar, !shouldShowExpanded else { return .none }
+        if let limit = QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip) {
+            // Measured once laid out; the label-length estimate covers the first frame.
+            let chipWidth = quotaChipWidth > 0 ? quotaChipWidth : QuotaChip.estimatedWidth(for: limit)
+            return QuotaChipLayout.reserve(
+                chipWidth: chipWidth,
+                mascotSize: mascotSize,
+                wing: compactWingWidth,
+                statusExtra: collapsedStatusExtra,
+                hasNotch: hasNotch,
+                spareWidth: maxPanelWidth - collapsedBarWidth
+            )
+        }
+        if !hasNotch, let chip = centeredCollapsedQuotaChip {
+            let chipW = quotaChipWidth > 0 ? quotaChipWidth : CollapsedQuotaChipModel.estimatedWidth(for: chip)
+            let sideW = max(compactWingWidth, rightWingWidth) + 12
+            let needed = sideW * 2 + chipW
+            let extra = min(max(0, needed - collapsedBarWidth), max(0, maxPanelWidth - collapsedBarWidth))
+            return QuotaChipLayout.Reserve(extraWidth: extra, shift: 0)
+        }
+        if hasNotch, let chip = CollapsedQuotaChipModel.resolve(
+            appState: appState,
+            showCodex: showCodexQuota,
+            showGrok: showGrokQuota,
+            showCursor: showCursorQuota,
+            showAntigravity: showAntigravityQuota,
+            l10n: L10n.shared,
+            includeAllWindows: false
+        ) {
+            let chipWidth = quotaChipWidth > 0 ? quotaChipWidth : CollapsedQuotaChipModel.estimatedWidth(for: chip)
+            return QuotaChipLayout.reserve(
+                chipWidth: chipWidth,
+                mascotSize: mascotSize,
+                wing: compactWingWidth,
+                statusExtra: collapsedStatusExtra,
+                hasNotch: true,
+                spareWidth: maxPanelWidth - collapsedBarWidth
+            )
+        }
+        return .none
     }
 
     var body: some View {
@@ -270,6 +318,16 @@ struct NotchPanelView: View {
                         CompactRightWing(appState: appState, expanded: shouldShowExpanded, hasNotch: hasNotch)
                     }
                     .frame(height: notchHeight)
+                    .overlay(alignment: .center) {
+                        if let chip = centeredCollapsedQuotaChip {
+                            CollapsedQuotaChip(model: chip)
+                                .fixedSize()
+                                .background(GeometryReader { geo in
+                                    Color.clear.preference(key: QuotaChipWidthKey.self, value: geo.size.width)
+                                })
+                                .transition(.opacity)
+                        }
+                    }
                     // Recap on hover while collapsed — shows whenever hover
                     // doesn't expand the panel (smart suppress with the
                     // terminal frontmost); expanded cards show it inline.
@@ -611,6 +669,8 @@ private struct CompactLeftWing: View {
     // even when AppState.primarySource wasn't recomputed (no session mutations in flight).
     @AppStorage(SettingsKey.defaultSource) private var settingsDefaultSource = SettingsDefaults.defaultSource
     @AppStorage(SettingsKey.showClaudeQuota) private var showClaudeQuota = SettingsDefaults.showClaudeQuota
+    @AppStorage(SettingsKey.showCodexQuota) private var showCodexQuota = SettingsDefaults.showCodexQuota
+    @AppStorage(SettingsKey.showGrokQuota) private var showGrokQuota = SettingsDefaults.showGrokQuota
     @AppStorage(SettingsKey.showCursorQuota) private var showCursorQuota = SettingsDefaults.showCursorQuota
     @AppStorage(SettingsKey.showAntigravityQuota) private var showAntigravityQuota = SettingsDefaults.showAntigravityQuota
     @AppStorage(SettingsKey.claudeQuotaChip) private var claudeQuotaChip = SettingsDefaults.claudeQuotaChip
@@ -679,6 +739,21 @@ private struct CompactLeftWing: View {
                             Color.clear.preference(key: QuotaChipWidthKey.self, value: geo.size.width)
                         })
                         .transition(.opacity)
+                } else if hasNotch, let chip = CollapsedQuotaChipModel.resolve(
+                    appState: appState,
+                    showCodex: showCodexQuota,
+                    showGrok: showGrokQuota,
+                    showCursor: showCursorQuota,
+                    showAntigravity: showAntigravityQuota,
+                    l10n: L10n.shared,
+                    includeAllWindows: false
+                ) {
+                    CollapsedQuotaChip(model: chip)
+                        .fixedSize()
+                        .background(GeometryReader { geo in
+                            Color.clear.preference(key: QuotaChipWidthKey.self, value: geo.size.width)
+                        })
+                        .transition(.opacity)
                 }
             }
         }
@@ -702,15 +777,29 @@ private struct CompactLeftWing: View {
             let newTool = liveTool
             withAnimation(.easeInOut(duration: 0.2)) { shownTool = newTool }
         }
-        .task(id: showCursorQuota && appState.quotaAgent == .cursor) {
-            guard showCursorQuota, appState.quotaAgent == .cursor else { return }
+        .task(id: showCodexQuota && (appState.collapsedQuotaAgent == .codex || appState.quotaAgent == .codex)) {
+            guard showCodexQuota, (appState.collapsedQuotaAgent == .codex || appState.quotaAgent == .codex) else { return }
+            while !Task.isCancelled {
+                await appState.refreshCodexQuota()
+                do { try await Task.sleep(for: .seconds(30)) } catch { break }
+            }
+        }
+        .task(id: showGrokQuota && (appState.collapsedQuotaAgent == .grok || appState.quotaAgent == .grok)) {
+            guard showGrokQuota, (appState.collapsedQuotaAgent == .grok || appState.quotaAgent == .grok) else { return }
+            while !Task.isCancelled {
+                await appState.refreshGrokQuota()
+                do { try await Task.sleep(for: .seconds(60)) } catch { break }
+            }
+        }
+        .task(id: showCursorQuota && (appState.collapsedQuotaAgent == .cursor || appState.quotaAgent == .cursor)) {
+            guard showCursorQuota, (appState.collapsedQuotaAgent == .cursor || appState.quotaAgent == .cursor) else { return }
             while !Task.isCancelled {
                 await appState.refreshCursorQuota()
                 do { try await Task.sleep(for: .seconds(60)) } catch { break }
             }
         }
-        .task(id: showAntigravityQuota && appState.quotaAgent == .antigravity) {
-            guard showAntigravityQuota, appState.quotaAgent == .antigravity else { return }
+        .task(id: showAntigravityQuota && (appState.collapsedQuotaAgent == .antigravity || appState.quotaAgent == .antigravity)) {
+            guard showAntigravityQuota, (appState.collapsedQuotaAgent == .antigravity || appState.quotaAgent == .antigravity) else { return }
             while !Task.isCancelled {
                 await appState.refreshAntigravityQuota()
                 do { try await Task.sleep(for: .seconds(60)) } catch { break }
@@ -3204,17 +3293,21 @@ private struct SessionListView: View {
 // MARK: - Plan limits (Anthropic subscription windows)
 
 /// One shared sentence for every plan footer:
-/// "Codex 5小时额度已用 100%，重置时间：11月7日 00:16".
+/// "Codex 5小时额度剩余 100%，重置时间：11月7日 00:16".
 private enum QuotaSentenceStyle {
+    static func remainingPercent(_ usedPercent: Double) -> Int {
+        Int(min(max(100 - usedPercent, 0), 100).rounded())
+    }
+
     static func line(name: String?, window: String, percent: Double, resetsAt: Date?, l10n: L10n, now: Date) -> String {
-        let used = Int(percent.rounded())
+        let remaining = remainingPercent(percent)
         let reset = resetText(resetsAt, l10n: l10n, now: now)
         if let name, !name.isEmpty {
-            if let reset { return String(format: l10n["quota_sentence"], name, window, used, reset) }
-            return String(format: l10n["quota_sentence_no_reset"], name, window, used)
+            if let reset { return String(format: l10n["quota_sentence"], name, window, remaining, reset) }
+            return String(format: l10n["quota_sentence_no_reset"], name, window, remaining)
         }
-        if let reset { return String(format: l10n["quota_sentence_more"], window, used, reset) }
-        return String(format: l10n["quota_sentence_more_no_reset"], window, used)
+        if let reset { return String(format: l10n["quota_sentence_more"], window, remaining, reset) }
+        return String(format: l10n["quota_sentence_more_no_reset"], window, remaining)
     }
 
     static func resetText(_ date: Date?, l10n: L10n, now: Date) -> String? {
@@ -3270,10 +3363,10 @@ private enum CursorQuotaCopy {
         var lines: [String] = []
         if let message = snapshot.displayMessage { lines.append(message) }
         if let auto = snapshot.autoUsedPercent {
-            lines.append("\(l10n["cursor_quota_auto"]) \(Int(auto.rounded()))%")
+            lines.append("\(l10n["cursor_quota_auto"]) \(QuotaSentenceStyle.remainingPercent(auto))%")
         }
         if let api = snapshot.apiUsedPercent {
-            lines.append("\(l10n["cursor_quota_api"]) \(Int(api.rounded()))%")
+            lines.append("\(l10n["cursor_quota_api"]) \(QuotaSentenceStyle.remainingPercent(api))%")
         }
         lines.append("\(l10n["codex_quota_updated"]) \(snapshot.capturedAt.formatted(date: .abbreviated, time: .shortened))")
         return lines.joined(separator: "\n")
@@ -3309,11 +3402,11 @@ private struct CursorQuotaFooter: View {
 }
 
 private enum AntigravityQuotaCopy {
-    static func lines(_ snapshot: AntigravityQuotaSnapshot, l10n: L10n, now: Date) -> [String] {
-        let windows = Array(snapshot.primaryGroup.windows.prefix(2))
+    static func lines(for group: AntigravityQuotaGroup, l10n: L10n, now: Date) -> [String] {
+        let windows = Array(group.windows.prefix(2))
         return windows.enumerated().map { index, window in
             QuotaSentenceStyle.line(
-                name: index == 0 ? "Antigravity" : nil,
+                name: index == 0 ? group.shortName : nil,
                 window: windowLabel(window.label, l10n: l10n),
                 percent: window.usedPercent,
                 resetsAt: window.resetsAt,
@@ -3332,11 +3425,11 @@ private enum AntigravityQuotaCopy {
         for group in snapshot.groups {
             for window in group.windows {
                 let label = windowLabel(window.label, l10n: l10n)
-                let used = Int(window.usedPercent.rounded())
+                let remaining = QuotaSentenceStyle.remainingPercent(window.usedPercent)
                 if multiGroup {
-                    lines.append("\(group.name) · \(label): \(used)%")
+                    lines.append("\(group.shortName) · \(label): \(remaining)%")
                 } else {
-                    lines.append("\(label): \(used)%")
+                    lines.append("\(label): \(remaining)%")
                 }
             }
         }
@@ -3360,21 +3453,229 @@ private enum AntigravityQuotaCopy {
             return raw
         }
     }
+
+    static func shortResetText(_ date: Date?, l10n: L10n, now: Date) -> String? {
+        guard let date else { return nil }
+        if date <= now { return l10n["codex_quota_expired"] }
+        let comps = Calendar.current.dateComponents([.month, .day, .hour, .minute], from: date)
+        guard let month = comps.month, let day = comps.day, let hour = comps.hour, let minute = comps.minute else {
+            return nil
+        }
+        return String(format: "%02d/%02d %02d:%02d", month, day, hour, minute)
+    }
+
+    static func ringColor(remainingPercent: Double) -> Color {
+        if remainingPercent >= 40 { return QuotaStyle.surplus }
+        if remainingPercent >= 15 { return QuotaStyle.warning }
+        return QuotaStyle.critical
+    }
+
+    static func splitWindows(in group: AntigravityQuotaGroup) -> (shortWindow: AntigravityQuotaWindow?, weeklyWindow: AntigravityQuotaWindow?) {
+        var shortWindow: AntigravityQuotaWindow?
+        var weeklyWindow: AntigravityQuotaWindow?
+        for window in group.windows {
+            let lowered = window.label.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if lowered == "weekly" || lowered == "week" || lowered == "7d" || lowered.contains("week") {
+                if weeklyWindow == nil {
+                    weeklyWindow = window
+                } else if shortWindow == nil {
+                    shortWindow = window
+                }
+            } else {
+                if shortWindow == nil {
+                    shortWindow = window
+                } else if weeklyWindow == nil {
+                    weeklyWindow = window
+                }
+            }
+        }
+        return (shortWindow, weeklyWindow)
+    }
+
+    static func compactWindowTag(_ window: AntigravityQuotaWindow, l10n: L10n) -> String {
+        let lowered = window.label.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch lowered {
+        case "5h":
+            return "5h"
+        case "weekly", "week", "7d":
+            return "week"
+        case "cycle":
+            let localized = l10n["quota_window_cycle"]
+            return localized.count <= 3 ? localized : "cycle"
+        default:
+            return window.label
+        }
+    }
+}
+
+private struct AntigravityQuotaRing: View {
+    let remainingFraction: Double
+    let color: Color
+    var size: CGFloat = 11
+
+    var body: some View {
+        let clamped = min(max(remainingFraction, 0), 1)
+        ZStack {
+            Circle()
+                .stroke(Color.white.opacity(0.14), lineWidth: 2)
+            Circle()
+                .trim(from: 0, to: clamped)
+                .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+        }
+        .frame(width: size, height: size)
+    }
+}
+
+private struct AntigravityQuotaCell: View {
+    let window: AntigravityQuotaWindow?
+    let isActiveGroup: Bool
+    let l10n: L10n
+    let now: Date
+    var alignment: Alignment = .leading
+
+    var body: some View {
+        Group {
+            if let window {
+                let remaining = QuotaSentenceStyle.remainingPercent(window.usedPercent)
+                let color = AntigravityQuotaCopy.ringColor(remainingPercent: window.remainingPercent)
+                HStack(spacing: 5) {
+                    Text(AntigravityQuotaCopy.compactWindowTag(window, l10n: l10n))
+                        .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.45))
+                        .frame(width: 26, alignment: .leading)
+                    AntigravityQuotaRing(
+                        remainingFraction: window.remainingPercent / 100,
+                        color: color
+                    )
+                    Text("\(remaining)%")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(isActiveGroup ? 0.92 : 0.72))
+                        .frame(width: 28, alignment: .trailing)
+                    if let reset = AntigravityQuotaCopy.shortResetText(window.resetsAt, l10n: l10n, now: now) {
+                        Text(reset)
+                            .font(.system(size: 9.5, weight: .regular, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.40))
+                            .lineLimit(1)
+                    }
+                }
+            } else {
+                Text("—")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.22))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: alignment)
+    }
 }
 
 private struct AntigravityQuotaFooter: View {
     var appState: AppState
     @ObservedObject private var l10n = L10n.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isExpanded = false
+    @State private var hovering = false
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             if let snapshot = appState.antigravityQuota {
-                QuotaSentenceBlock(
-                    lines: AntigravityQuotaCopy.lines(snapshot, l10n: l10n, now: context.date),
-                    help: appState.antigravityQuotaReadFailed
-                        ? l10n["antigravity_quota_read_failed"]
-                        : AntigravityQuotaCopy.help(snapshot, l10n: l10n)
-                )
+                let activeGroup = snapshot.group(forModel: appState.quotaSessionModel)
+                let canExpand = snapshot.groups.count > 1
+                let helpText = appState.antigravityQuotaReadFailed
+                    ? l10n["antigravity_quota_read_failed"]
+                    : AntigravityQuotaCopy.help(snapshot, l10n: l10n)
+
+                Group {
+                    if isExpanded && canExpand {
+                        VStack(spacing: 0) {
+                            ForEach(Array(snapshot.groups.enumerated()), id: \.offset) { index, group in
+                                if index > 0 {
+                                    Rectangle()
+                                        .fill(Color.white.opacity(0.06))
+                                        .frame(height: 0.5)
+                                        .padding(.vertical, 5)
+                                }
+                                let isActive = group.name == activeGroup.name
+                                let minRemaining = group.windows.map(\.remainingPercent).min() ?? 100
+                                let split = AntigravityQuotaCopy.splitWindows(in: group)
+                                HStack(spacing: 8) {
+                                    HStack(spacing: 5) {
+                                        Circle()
+                                            .fill(isActive ? AntigravityQuotaCopy.ringColor(remainingPercent: minRemaining) : Color.clear)
+                                            .frame(width: 5, height: 5)
+                                        Text(group.shortName)
+                                            .font(.system(size: 10, weight: isActive ? .semibold : .medium, design: .monospaced))
+                                            .foregroundStyle(.white.opacity(isActive ? 0.92 : 0.60))
+                                            .lineLimit(1)
+                                    }
+                                    .frame(width: 86, alignment: .leading)
+
+                                    AntigravityQuotaCell(
+                                        window: split.shortWindow,
+                                        isActiveGroup: isActive,
+                                        l10n: l10n,
+                                        now: context.date,
+                                        alignment: .leading
+                                    )
+                                    AntigravityQuotaCell(
+                                        window: split.weeklyWindow,
+                                        isActiveGroup: isActive,
+                                        l10n: l10n,
+                                        now: context.date,
+                                        alignment: .trailing
+                                    )
+
+                                    Image(systemName: "chevron.up")
+                                        .font(.system(size: 8.5, weight: .semibold))
+                                        .foregroundStyle(.white.opacity(hovering ? 0.75 : 0.45))
+                                        .opacity(index == 0 ? 1 : 0)
+                                        .frame(width: 12, alignment: .trailing)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 7)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(hovering ? Color.white.opacity(0.075) : Color.white.opacity(0.05))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.09), lineWidth: 0.75)
+                        )
+                        .padding(.horizontal, 12)
+                        .padding(.top, 4)
+                        .padding(.bottom, 10)
+                    } else {
+                        let lineText = AntigravityQuotaCopy.lines(for: activeGroup, l10n: l10n, now: context.date)
+                            .joined(separator: "    ")
+                        HStack(spacing: 6) {
+                            Text(lineText)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundStyle(.white.opacity(0.65))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            if canExpand {
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 8, weight: .semibold))
+                                    .foregroundStyle(.white.opacity(hovering ? 0.75 : 0.45))
+                            }
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.top, 5)
+                        .padding(.bottom, 7)
+                    }
+                }
+                .contentShape(Rectangle())
+                .help(helpText)
+                .onHover { hovering = $0 }
+                .onTapGesture {
+                    guard canExpand else { return }
+                    withAnimation(reduceMotion ? nil : NotchAnimation.micro) {
+                        isExpanded.toggle()
+                    }
+                }
             } else {
                 Text(l10n[appState.antigravityQuotaReadFailed ? "antigravity_quota_read_failed" : "antigravity_quota_unavailable"])
                     .font(.system(size: 10))
@@ -3430,7 +3731,7 @@ private struct GrokQuotaFooter: View {
 
     private func tooltip(_ snapshot: GrokQuotaSnapshot) -> String {
         if appState.grokQuotaReadFailed { return l10n["grok_quota_read_failed"] }
-        let split = snapshot.products.map { "\(label($0.name)) \(Int($0.usedPercent.rounded()))%" }
+        let split = snapshot.products.map { "\(label($0.name)) \(QuotaSentenceStyle.remainingPercent($0.usedPercent))%" }
         var lines = split
         lines.append("\(l10n["codex_quota_updated"]) \(snapshot.capturedAt.formatted(date: .abbreviated, time: .shortened))")
         return lines.joined(separator: "\n")
@@ -3669,6 +3970,177 @@ private struct QuotaPaceMark: ViewModifier {
                     .allowsHitTesting(false)
             }
         }
+    }
+}
+
+private struct CollapsedQuotaChipWindow: Equatable {
+    let tag: String?
+    let remainingPercent: Double
+}
+
+private struct CollapsedQuotaChipModel: Equatable {
+    let title: String
+    let windows: [CollapsedQuotaChipWindow]
+    let stale: Bool
+    let help: String
+
+    static func estimatedWidth(for model: CollapsedQuotaChipModel) -> CGFloat {
+        CGFloat(model.title.count) * 6.2
+            + CGFloat(model.windows.count) * 66
+            + CGFloat(max(model.windows.count - 1, 0)) * 10
+    }
+
+    @MainActor
+    static func resolve(
+        appState: AppState,
+        showCodex: Bool,
+        showGrok: Bool,
+        showCursor: Bool,
+        showAntigravity: Bool,
+        l10n: L10n,
+        includeAllWindows: Bool,
+        now: Date = Date()
+    ) -> CollapsedQuotaChipModel? {
+        guard let session = appState.mostRecentQuotaSession,
+              let agent = QuotaAgentSelection.agent(for: session) else {
+            return nil
+        }
+
+        let weekLabel = l10n["quota_window_week"]
+        let compactWeek = "week"
+
+        switch agent {
+        case .claude:
+            return nil
+        case .codex:
+            guard showCodex, let snapshot = appState.codexQuota else {
+                return nil
+            }
+            let picked: [CodexQuotaWindow]
+            if includeAllWindows {
+                picked = Array(snapshot.windows.sorted { $0.minutes < $1.minutes }.prefix(2))
+            } else if let lowest = snapshot.lowestRemainingWindow() {
+                picked = [lowest]
+            } else {
+                picked = []
+            }
+            guard !picked.isEmpty else { return nil }
+            let chipWindows = picked.map { item in
+                let tag = item.minutes >= 1440 ? compactWeek : "\(max(item.minutes / 60, 1))h"
+                return CollapsedQuotaChipWindow(tag: tag, remainingPercent: item.remainingPercent)
+            }
+            let lines = snapshot.windows.enumerated().map { index, item in
+                QuotaSentenceStyle.line(
+                    name: index == 0 ? "Codex" : nil,
+                    window: QuotaSentenceStyle.codexWindow(item.minutes, l10n: l10n),
+                    percent: item.usedPercent,
+                    resetsAt: item.resetsAt,
+                    l10n: l10n,
+                    now: now
+                )
+            }
+            return CollapsedQuotaChipModel(
+                title: "Codex",
+                windows: chipWindows,
+                stale: appState.codexQuotaReadFailed,
+                help: lines.joined(separator: "\n")
+            )
+        case .antigravity:
+            guard showAntigravity, let snapshot = appState.antigravityQuota else {
+                return nil
+            }
+            let group = snapshot.group(forModel: session.model)
+            let picked: [AntigravityQuotaWindow]
+            if includeAllWindows {
+                picked = Array(group.windows.prefix(2))
+            } else if let lowest = group.lowestRemainingWindow() {
+                picked = [lowest]
+            } else {
+                picked = []
+            }
+            guard !picked.isEmpty else { return nil }
+            let chipWindows = picked.map { item in
+                CollapsedQuotaChipWindow(
+                    tag: AntigravityQuotaCopy.compactWindowTag(item, l10n: l10n),
+                    remainingPercent: item.remainingPercent
+                )
+            }
+            return CollapsedQuotaChipModel(
+                title: group.shortName,
+                windows: chipWindows,
+                stale: appState.antigravityQuotaReadFailed,
+                help: AntigravityQuotaCopy.help(snapshot, l10n: l10n)
+            )
+        case .cursor:
+            guard showCursor, let snapshot = appState.cursorQuota else {
+                return nil
+            }
+            let remaining = min(max(100 - snapshot.usedPercent, 0), 100)
+            return CollapsedQuotaChipModel(
+                title: "Cursor",
+                windows: [CollapsedQuotaChipWindow(tag: nil, remainingPercent: remaining)],
+                stale: appState.cursorQuotaReadFailed,
+                help: CursorQuotaCopy.help(snapshot, l10n: l10n)
+            )
+        case .grok:
+            guard showGrok, let snapshot = appState.grokQuota else {
+                return nil
+            }
+            let remaining = min(max(100 - snapshot.usedPercent, 0), 100)
+            let summary = QuotaSentenceStyle.line(
+                name: "Grok",
+                window: weekLabel,
+                percent: snapshot.usedPercent,
+                resetsAt: snapshot.resetsAt,
+                l10n: l10n,
+                now: now
+            )
+            return CollapsedQuotaChipModel(
+                title: "Grok",
+                windows: [CollapsedQuotaChipWindow(tag: nil, remainingPercent: remaining)],
+                stale: appState.grokQuotaReadFailed,
+                help: summary
+            )
+        }
+    }
+}
+
+private struct CollapsedQuotaChip: View {
+    let model: CollapsedQuotaChipModel
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(model.title)
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.75))
+                .lineLimit(1)
+            ForEach(Array(model.windows.enumerated()), id: \.offset) { index, window in
+                if index > 0 {
+                    Text("·")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.30))
+                }
+                let color = AntigravityQuotaCopy.ringColor(remainingPercent: window.remainingPercent)
+                HStack(spacing: 3.5) {
+                    if let tag = window.tag {
+                        Text(tag)
+                            .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.48))
+                            .lineLimit(1)
+                    }
+                    AntigravityQuotaRing(
+                        remainingFraction: window.remainingPercent / 100,
+                        color: color,
+                        size: 9
+                    )
+                    Text("\(Int(window.remainingPercent.rounded()))%")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(color)
+                }
+            }
+        }
+        .opacity(model.stale ? 0.55 : 1)
+        .help(model.help)
     }
 }
 

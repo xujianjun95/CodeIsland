@@ -6,6 +6,10 @@ public struct AntigravityQuotaWindow: Equatable, Sendable {
     public let usedPercent: Double
     public let resetsAt: Date?
 
+    public var remainingPercent: Double {
+        min(max(100.0 - usedPercent, 0), 100)
+    }
+
     public init(id: String, label: String, usedPercent: Double, resetsAt: Date?) {
         self.id = id
         self.label = label
@@ -16,10 +20,29 @@ public struct AntigravityQuotaWindow: Equatable, Sendable {
 
 public struct AntigravityQuotaGroup: Equatable, Sendable {
     public let name: String
+    public let description: String?
     public let windows: [AntigravityQuotaWindow]
 
-    public init(name: String, windows: [AntigravityQuotaWindow]) {
+    public var shortName: String {
+        let lowered = name.lowercased()
+        if lowered.contains("argon") { return "Argon" }
+        if lowered.contains("claude") || lowered.contains("gpt") { return "Claude/GPT" }
+        if lowered.contains("gemini") { return "Gemini" }
+        return name
+    }
+
+    public func lowestRemainingWindow() -> AntigravityQuotaWindow? {
+        windows.min { lhs, rhs in
+            if lhs.remainingPercent != rhs.remainingPercent {
+                return lhs.remainingPercent < rhs.remainingPercent
+            }
+            return false
+        }
+    }
+
+    public init(name: String, description: String? = nil, windows: [AntigravityQuotaWindow]) {
         self.name = name
+        self.description = description
         self.windows = windows
     }
 }
@@ -40,6 +63,57 @@ public struct AntigravityQuotaSnapshot: Equatable, Sendable {
         self.planName = planName
         self.primaryGroup = primaryGroup
         self.groups = groups
+    }
+
+    public func group(forModel model: String?) -> AntigravityQuotaGroup {
+        guard let model = model?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !model.isEmpty,
+              model.lowercased() != "auto" else {
+            return primaryGroup
+        }
+        let normalizedModel = Self.normalizeToken(model)
+        guard !normalizedModel.isEmpty else { return primaryGroup }
+
+        if normalizedModel.contains("argon"),
+           let argon = groups.first(where: { $0.name.lowercased().contains("argon") }) {
+            return argon
+        }
+
+        for group in groups {
+            guard let description = group.description else { continue }
+            if Self.normalizeToken(description).contains(normalizedModel) {
+                return group
+            }
+        }
+
+        let thirdPartyTokens = ["claude", "opus", "sonnet", "haiku", "gpt", "o1", "o3", "o4"]
+        if thirdPartyTokens.contains(where: { normalizedModel.contains($0) }),
+           let thirdParty = groups.first(where: {
+               let lowered = $0.name.lowercased()
+               return lowered.contains("claude") || lowered.contains("gpt")
+           }) {
+            return thirdParty
+        }
+
+        let geminiTokens = ["gemini", "neon", "hydrogen", "flash", "orchestrator"]
+        if geminiTokens.contains(where: { normalizedModel.contains($0) }),
+           let gemini = groups.first(where: {
+               let lowered = $0.name.lowercased()
+               return lowered.contains("gemini") && !lowered.contains("argon")
+           }) {
+            return gemini
+        }
+
+        return primaryGroup
+    }
+
+    private static func normalizeToken(_ text: String) -> String {
+        let mapped = text.lowercased().unicodeScalars.map { scalar -> Character in
+            CharacterSet.alphanumerics.contains(scalar) ? Character(scalar) : " "
+        }
+        return String(mapped)
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
     }
 }
 
@@ -223,6 +297,7 @@ public enum AntigravityQuotaLoader {
         var groups: [AntigravityQuotaGroup] = []
         for rawGroup in rawGroups {
             let name = nonEmpty(rawGroup["displayName"] as? String ?? rawGroup["display_name"] as? String ?? rawGroup["name"] as? String) ?? "Antigravity"
+            let description = nonEmpty(rawGroup["description"] as? String)
             let rawBuckets = (rawGroup["buckets"] as? [[String: Any]]) ?? []
             var windows: [AntigravityQuotaWindow] = []
             for bucket in rawBuckets {
@@ -236,7 +311,7 @@ public enum AntigravityQuotaLoader {
             }
             guard !windows.isEmpty else { continue }
             windows.sort(by: windowSortOrder)
-            groups.append(AntigravityQuotaGroup(name: name, windows: windows))
+            groups.append(AntigravityQuotaGroup(name: name, description: description, windows: windows))
         }
 
         guard let primary = selectPrimaryGroup(from: groups) else { return nil }

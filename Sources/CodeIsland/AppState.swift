@@ -52,6 +52,15 @@ final class AppState {
     var quotaAgent: QuotaAgent? {
         QuotaAgentSelection.resolve(sessions: sessions, activeID: activeSessionId)
     }
+    var quotaSessionModel: String? {
+        QuotaAgentSelection.resolveSession(sessions: sessions, activeID: activeSessionId)?.model
+    }
+    var mostRecentQuotaSession: SessionSnapshot? {
+        QuotaAgentSelection.resolveMostRecentSession(sessions: sessions, activeID: activeSessionId)
+    }
+    var collapsedQuotaAgent: QuotaAgent? {
+        QuotaAgentSelection.agent(for: mostRecentQuotaSession)
+    }
     var permissionQueue: [PermissionRequest] = [] {
         didSet {
             followUps.waitingChanged()
